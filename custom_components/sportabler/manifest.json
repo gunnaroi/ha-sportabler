@@ -1,9 +1,10 @@
 {
   "domain": "sportabler",
   "name": "Sportabler (Abler)",
-  "codeowners": [],
+  "codeowners": ["@gunnaroi"],
   "config_flow": true,
-  "documentation": "https://github.com/",
+  "documentation": "https://github.com/gunnaroi/ha-sportabler",
+  "issue_tracker": "https://github.com/gunnaroi/ha-sportabler/issues",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "requirements": [],

@@ -13,6 +13,16 @@ from the app's own network traffic — there is no public API.
   or dashboard button (fields: `child_id`, `event_id`, `status: G|N` — ids are visible in
   the sensor's `event_id` attribute and the device's identifiers)
 
+## Install via HACS
+
+This is a private repo, so HACS needs a GitHub token that can see it (the same token
+you gave HACS during its own setup works, as long as it's a classic PAT with the
+`repo` scope, or a fine-grained token with access to this repository).
+
+1. In Home Assistant: **HACS → Integrations → ⋮ → Custom repositories**
+2. Add `https://github.com/gunnaroi/ha-sportabler`, category **Integration**
+3. Find "Sportabler (Abler)" in HACS and install it, then restart Home Assistant
+
 ## Setup
 
 Sportabler's login requires an SMS code behind an invisible reCAPTCHA, which can't be
@@ -21,12 +31,12 @@ driven headlessly from Home Assistant. Instead, you bootstrap the integration wi
 alive indefinitely from there (every API call rotates it, and it's re-saved to the
 config entry automatically).
 
-1. In a desktop browser, go to <https://www.abler.io> and log in as you normally would.
-2. Open developer tools (F12) → **Application** (Chrome) or **Storage** (Firefox) →
-   **Cookies** → `https://www.abler.io`.
-3. Copy the value of the `refreshToken` cookie (a long JWT string).
-4. In Home Assistant: **Settings → Devices & Services → Add Integration → Sportabler
-   (Abler)**, and paste that value in.
+1. **Settings → Devices & Services → Add Integration → Sportabler (Abler)**
+2. The first screen links to Sportabler's own login page — log in there with your
+   phone number as usual, then come back and press **Next**
+3. With that tab still open, open developer tools → **Application**/**Storage** →
+   **Cookies** → `https://www.abler.io`, and copy the value of the `refreshToken`
+   cookie (a long JWT string) into the next screen
 
 The token is normally valid for 80 days and silently renews itself on every poll, so
 in practice you should not need to repeat this — only if the session gets invalidated
