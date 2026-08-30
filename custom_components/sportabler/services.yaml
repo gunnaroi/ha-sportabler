@@ -1,0 +1,27 @@
+set_attendance:
+  name: Set attendance
+  description: Set a child's Going/Not going status for a Sportabler event.
+  fields:
+    child_id:
+      name: Child ID
+      description: The child's Sportabler player id (see the device's sensor attributes).
+      required: true
+      selector:
+        text:
+    event_id:
+      name: Event ID
+      description: The Sportabler event id (see the calendar/sensor event_id attribute).
+      required: true
+      selector:
+        text:
+    status:
+      name: Status
+      description: Attendance status to set.
+      required: true
+      selector:
+        select:
+          options:
+            - label: Going
+              value: "G"
+            - label: Not going
+              value: "N"

@@ -1,0 +1,24 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect Sportabler (Abler)",
+        "description": "Sportabler's login is gated by SMS + reCAPTCHA and can't be automated from Home Assistant. [Open the Sportabler login page](https://abler.io/sign-on/) and log in there with your phone number as usual, then come back here and press Next."
+      },
+      "token": {
+        "title": "Paste your session token",
+        "description": "With the Sportabler tab still open, open developer tools → Application/Storage → Cookies → `https://www.abler.io`, and paste the value of the `refreshToken` cookie below. It rotates automatically and is kept valid by this integration afterwards.",
+        "data": {
+          "refresh_token": "Refresh token"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "That refresh token was rejected. Log in again in your browser and copy a fresh `refreshToken` cookie value.",
+      "cannot_connect": "Could not reach Sportabler."
+    },
+    "abort": {
+      "already_configured": "This Sportabler account is already configured."
+    }
+  }
+}
