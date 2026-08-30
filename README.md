@@ -15,10 +15,6 @@ from the app's own network traffic — there is no public API.
 
 ## Install via HACS
 
-This is a private repo, so HACS needs a GitHub token that can see it (the same token
-you gave HACS during its own setup works, as long as it's a classic PAT with the
-`repo` scope, or a fine-grained token with access to this repository).
-
 1. In Home Assistant: **HACS → Integrations → ⋮ → Custom repositories**
 2. Add `https://github.com/gunnaroi/ha-sportabler`, category **Integration**
 3. Find "Sportabler (Abler)" in HACS and install it, then restart Home Assistant
