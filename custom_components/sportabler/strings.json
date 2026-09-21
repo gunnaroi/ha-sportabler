@@ -7,7 +7,7 @@
       },
       "token": {
         "title": "Paste your session token",
-        "description": "With the Sportabler tab still open, open developer tools → Application/Storage → Cookies → `https://www.abler.io`, and paste the value of the `refreshToken` cookie below. It rotates automatically and is kept valid by this integration afterwards.",
+        "description": "Log in to Abler in your browser, then copy the refreshToken cookie from developer tools → Application/Storage → Cookies → https://www.abler.io. Session cookies are saved when the server rotates them. Sessions may still expire or be revoked.",
         "data": {
           "refresh_token": "Refresh token"
         }
@@ -18,7 +18,20 @@
       "cannot_connect": "Could not reach Sportabler."
     },
     "abort": {
-      "already_configured": "This Sportabler account is already configured."
+      "already_configured": "This Sportabler account is already configured.",
+      "reauth_successful": "Re-authentication was successful.",
+      "wrong_account": "Log in with the same Abler account as this integration."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Request frequency",
+        "description": "Choose how often to fetch schedule changes. Manual only still fetches once on startup or reload; use homeassistant.update_entity on a Sportabler entity for later updates. Profiles are cached for 24 hours. Saving changes reloads the integration.",
+        "data": {
+          "scan_interval_minutes": "Schedule refresh interval"
+        }
+      }
     }
   }
 }
