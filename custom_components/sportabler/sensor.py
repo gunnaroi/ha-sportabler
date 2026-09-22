@@ -144,6 +144,7 @@ class SportablerConversationsSensor(_SportablerManualSensor):
     def __init__(self, entry: ConfigEntry, client: AblerApiClient) -> None:
         super().__init__(entry, client)
         self._attr_unique_id = f"{entry.entry_id}_conversations"
+        self._latest_message_ids: dict[str, str] = {}
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -160,20 +161,54 @@ class SportablerConversationsSensor(_SportablerManualSensor):
 
     async def async_update(self) -> None:
         page = await self._fetch(lambda: self._client.async_get_conversations())
-        self._attr_native_value = len(page["items"])
-        self._attr_extra_state_attributes = {
-            "conversations": [
+        conversations = []
+        changed_ids = []
+        for item in page["items"]:
+            conversation_id = item["id"]
+            latest = next(
+                (
+                    edge.get("node")
+                    for edge in (item.get("messages") or {}).get("edges", [])
+                    if edge.get("node")
+                ),
+                None,
+            )
+            latest_id = str(latest["id"]) if latest and latest.get("id") else None
+            is_new = bool(
+                latest_id
+                and conversation_id in self._latest_message_ids
+                and latest_id != self._latest_message_ids[conversation_id]
+            )
+            if latest_id:
+                self._latest_message_ids[conversation_id] = latest_id
+            if is_new:
+                changed_ids.append(conversation_id)
+            conversations.append(
                 {
-                    "id": item["id"],
+                    "id": conversation_id,
                     "name": item.get("name")
                     or (
                         (item.get("user2") or {}).get("displayName")
                         or (item.get("user1") or {}).get("displayName")
                     ),
                     "unread_count": item.get("unreadCount", 0),
+                    "latest_message": (
+                        {
+                            "id": latest_id,
+                            "body": latest.get("messageBody"),
+                            "sender": (latest.get("creator") or {}).get("displayName"),
+                            "created_at": latest.get("createdAt"),
+                        }
+                        if latest_id
+                        else None
+                    ),
+                    "new_message": is_new,
                 }
-                for item in page["items"]
-            ],
+            )
+        self._attr_native_value = len(conversations)
+        self._attr_extra_state_attributes = {
+            "conversations": conversations,
+            "new_message_conversation_ids": changed_ids,
             "has_more": page["page_info"]["hasNextPage"],
             "next_cursor": page["page_info"]["endCursor"],
         }

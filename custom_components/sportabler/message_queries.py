@@ -216,6 +216,16 @@ query message($id: String, $first: Int, $cursor: String) {
         conversationType
         messageGroup { id name }
         unreadCount
+        messages(first: 1) {
+          edges {
+            node {
+              id
+              creator { id displayName }
+              messageBody
+              createdAt
+            }
+          }
+        }
       }
     }
     pageInfo { hasNextPage hasPreviousPage startCursor endCursor }

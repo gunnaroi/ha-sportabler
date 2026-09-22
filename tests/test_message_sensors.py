@@ -37,7 +37,25 @@ def fixtures():
         ),
         async_get_conversations=AsyncMock(
             return_value={
-                "items": [{"id": "conversation-1", "name": "Team", "unreadCount": 2}],
+                "items": [
+                    {
+                        "id": "conversation-1",
+                        "name": "Team",
+                        "unreadCount": 2,
+                        "messages": {
+                            "edges": [
+                                {
+                                    "node": {
+                                        "id": "message-1",
+                                        "messageBody": "Practice moved",
+                                        "creator": {"displayName": "Coach"},
+                                        "createdAt": 123,
+                                    }
+                                }
+                            ]
+                        },
+                    }
+                ],
                 "page_info": PAGE,
             }
         ),
@@ -80,8 +98,20 @@ async def test_manual_refresh_updates_only_selected_entity():
     await inbox.async_update()
     assert inbox.native_value == 1
     assert inbox.extra_state_attributes["conversations"] == [
-        {"id": "conversation-1", "name": "Team", "unread_count": 2}
+        {
+            "id": "conversation-1",
+            "name": "Team",
+            "unread_count": 2,
+            "latest_message": {
+                "id": "message-1",
+                "body": "Practice moved",
+                "sender": "Coach",
+                "created_at": 123,
+            },
+            "new_message": False,
+        }
     ]
+    assert inbox.extra_state_attributes["new_message_conversation_ids"] == []
     client.async_get_news_feed.assert_awaited_once()
 
 
@@ -117,3 +147,27 @@ async def test_conversation_schedule_is_local_daytime_only():
         }
         track.call_args.args[1](None)
         schedule.assert_called_once_with(True)
+
+
+async def test_new_latest_message_is_detected_after_initial_snapshot():
+    _hass, entry, client = fixtures()
+    inbox = SportablerConversationsSensor(entry, client)
+    await inbox.async_update()
+    client.async_get_conversations.return_value["items"][0]["messages"]["edges"][0][
+        "node"
+    ] = {
+        "id": "message-2",
+        "messageBody": "New time",
+        "creator": {"displayName": "Coach"},
+        "createdAt": 456,
+    }
+    await inbox.async_update()
+    assert inbox.extra_state_attributes["new_message_conversation_ids"] == [
+        "conversation-1"
+    ]
+    assert (
+        inbox.extra_state_attributes["conversations"][0]["latest_message"]["body"]
+        == "New time"
+    )
+    await inbox.async_update()
+    assert inbox.extra_state_attributes["new_message_conversation_ids"] == []

@@ -11,10 +11,15 @@ from the app's own network traffic — there is no public API.
     your current attendance response (`going` / `not_going` / `not_responded`) as attributes
 - Two account-level snapshot sensors: **Latest feed post** (body and author as
   attributes) and **Conversations** (one page of conversation IDs, names, and
-  unread counts). The Conversations sensor refreshes once per hour from 07:00
+  unread counts, and the latest message in each). The Conversations sensor refreshes
+  once per hour from 07:00
   through 22:00 in Home Assistant's local timezone (16 requests per day with
   continuous uptime). The feed sensor remains manual-only. Conversation histories
-  are fetched only on demand.
+  are fetched only on demand. The latest message is included in the hourly inbox
+  response, so showing it makes no additional request. After the first successful
+  refresh, a changed latest-message ID marks that conversation as having a new
+  message. A fresh start establishes a baseline rather than claiming old messages
+  are new.
 - A `sportabler.set_attendance` service to RSVP a child to an event from an automation
   or dashboard button (fields: `child_id`, `event_id`, `status: G|N` — ids are visible in
   the sensor's `event_id` attribute and the device's identifiers)
@@ -52,7 +57,7 @@ entity. Saving options reloads the integration and fetches once.
 
 Profiles are cached for 24 hours in memory. With continuous uptime, hourly mode
 makes roughly 25 requests per day per account, compared with 192 previously.
-The daytime Conversations sensor adds up to 16 inbox-metadata requests per day,
+The daytime Conversations sensor adds up to 16 inbox requests per day,
 for roughly 41 scheduled requests per day per account with hourly calendar mode.
 Startup, reloads, manual updates, and attendance submissions add requests.
 Less frequent updates mean schedule changes reach Home Assistant later.
@@ -88,7 +93,11 @@ Home Assistant Actions provides four **administrator-only, read-only** actions:
 To refresh either sensor immediately, run `homeassistant.update_entity` for that
 sensor under **Developer Tools → Actions**. The Conversations sensor remains
 unknown until its first scheduled or manual refresh; the feed sensor remains
-unknown until manually refreshed. Refreshing one sensor makes one Abler request
+unknown until manually refreshed. Open the Conversations entity's attributes to
+see each conversation's `latest_message` with body, sender, and timestamp.
+The `new_message` field and `new_message_conversation_ids` attribute identify
+conversations whose latest message ID changed since the previous successful refresh.
+Refreshing one sensor makes one Abler request
 and does not update the other. The feed body and conversation names are then
 stored as Home Assistant state attributes and may be retained by Recorder; use the response actions below
 if you do not want that persistence.
@@ -97,7 +106,11 @@ These actions return `items` and `page_info`. If `page_info.hasNextPage` is true
 pass `page_info.endCursor` as `after` on the next call. Each action fetches **one
 page only**, up to 30 items. Calling an action makes one request; these features
 add no automatic pagination or conversation-history polling. Only the
-Conversations sensor has a scheduled inbox-metadata refresh. The
+Conversations sensor has a scheduled inbox refresh. It shows the latest message
+from each conversation in the first page, not the full message history. If
+several messages arrive between checks, the inbox snapshot shows only the newest;
+use `sportabler.get_conversation_messages` to retrieve the conversation history.
+The change flag can also include a message sent by you. The
 integration does not call Abler's `MarkAsRead` mutation. The conversation-history action returns message bodies only in its response;
 there is no conversation-history entity. Automations that save or forward action
 responses may retain them elsewhere.

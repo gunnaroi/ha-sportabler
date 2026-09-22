@@ -220,7 +220,7 @@ async def test_auth_failure_requests_reauth_without_message_mutation(monkeypatch
     entry.async_start_reauth.assert_called_once_with(hass)
 
 
-async def test_conversation_discovery_is_one_page_and_metadata_only():
+async def test_conversation_discovery_is_one_page_with_latest_message():
     page = {
         "hasNextPage": True,
         "hasPreviousPage": False,
@@ -244,5 +244,5 @@ async def test_conversation_discovery_is_one_page_and_metadata_only():
         "first": 20,
         "cursor": None,
     }
-    assert "messageBody" not in QUERY_CONVERSATIONS
-    assert "messages(" not in QUERY_CONVERSATIONS
+    assert "messageBody" in QUERY_CONVERSATIONS
+    assert "messages(first: 1)" in QUERY_CONVERSATIONS
