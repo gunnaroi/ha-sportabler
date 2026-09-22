@@ -22,15 +22,19 @@ class MessageArchive:
             hass, 1, f"sportabler_messages_{entry_id}", private=True, atomic_writes=True
         )
         self._conversations: dict[str, dict[str, Any]] = {}
+        self._has_snapshot = False
         self._sync_lock = asyncio.Lock()
 
     async def async_load(self) -> None:
         data = await self._store.async_load()
         if isinstance(data, dict) and isinstance(data.get("conversations"), dict):
             self._conversations = data["conversations"]
+            self._has_snapshot = bool(data.get("has_snapshot", True))
 
     async def async_save(self) -> None:
-        await self._store.async_save({"conversations": self._conversations})
+        await self._store.async_save(
+            {"conversations": self._conversations, "has_snapshot": self._has_snapshot}
+        )
 
     def conversation(self, conversation_id: str) -> dict[str, Any] | None:
         return self._conversations.get(conversation_id)
@@ -72,6 +76,12 @@ class MessageArchive:
         }
 
     @property
+    def unread_count(self) -> int | None:
+        if not self._has_snapshot:
+            return None
+        return sum(item.get("unread_count", 0) for item in self._conversations.values())
+
+    @property
     def message_count(self) -> int:
         return sum(
             len(item.get("messages", {})) for item in self._conversations.values()
@@ -88,8 +98,9 @@ class MessageArchive:
         self, client: AblerApiClient, inbox_items: list[dict[str, Any]]
     ) -> dict[str, list[str]]:
         remaining = MAX_MESSAGE_PAGES_PER_SYNC
+        self._has_snapshot = True
         new_ids: dict[str, list[str]] = {}
-        dirty = False
+        dirty = True
         try:
             for item in inbox_items:
                 conversation_id = str(item["id"])

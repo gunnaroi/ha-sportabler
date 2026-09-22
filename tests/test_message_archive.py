@@ -15,6 +15,7 @@ PAGE = {"hasNextPage": False, "endCursor": None}
 def archive(saved=None):
     result = MessageArchive.__new__(MessageArchive)
     result._conversations = deepcopy(saved or {})
+    result._has_snapshot = bool(saved)
     result._sync_lock = asyncio.Lock()
     result._store = SimpleNamespace(async_save=AsyncMock())
     return result

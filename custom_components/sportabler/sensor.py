@@ -30,10 +30,12 @@ async def async_setup_entry(
         SportablerNextActivitySensor(coordinator, child_id)
         for child_id in coordinator.data["children"]
     ]
+    unread = SportablerUnreadMessagesSensor(entry, archive)
     entities.extend(
         (
             SportablerFeedSensor(entry, client),
-            SportablerConversationsSensor(entry, client, archive),
+            SportablerConversationsSensor(entry, client, archive, unread),
+            unread,
         )
     )
     async_add_entities(entities)
@@ -138,16 +140,42 @@ class SportablerFeedSensor(_SportablerManualSensor):
         }
 
 
+class SportablerUnreadMessagesSensor(SensorEntity):
+    """IMAP-style unread-message count; updated by the inbox refresh."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Unread messages"
+    _attr_should_poll = False
+
+    def __init__(self, entry: ConfigEntry, archive: MessageArchive) -> None:
+        self._archive = archive
+        self._attr_unique_id = f"{entry.entry_id}_unread_messages"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.title,
+            manufacturer="Sportabler",
+        )
+
+    @property
+    def native_value(self) -> int | None:
+        return self._archive.unread_count
+
+
 class SportablerConversationsSensor(_SportablerManualSensor):
     """Conversation metadata refreshed hourly during the daytime."""
 
     _attr_name = "Conversations"
 
     def __init__(
-        self, entry: ConfigEntry, client: AblerApiClient, archive: MessageArchive
+        self,
+        entry: ConfigEntry,
+        client: AblerApiClient,
+        archive: MessageArchive,
+        unread_sensor: SportablerUnreadMessagesSensor | None = None,
     ) -> None:
         super().__init__(entry, client)
         self._archive = archive
+        self._unread_sensor = unread_sensor
         self._attr_unique_id = f"{entry.entry_id}_conversations"
 
     async def async_added_to_hass(self) -> None:
@@ -227,3 +255,19 @@ class SportablerConversationsSensor(_SportablerManualSensor):
             "new_message_conversation_ids": list(new_ids),
             "stored_message_count": self._archive.message_count,
         }
+        if self._unread_sensor and self._unread_sensor.platform is not None:
+            self._unread_sensor.async_write_ha_state()
+        for conversation_id, message_ids in new_ids.items():
+            saved = self._archive.conversation(conversation_id)["messages"]
+            for message_id in message_ids:
+                message = saved[message_id]
+                self.hass.bus.async_fire(
+                    "sportabler_message",
+                    {
+                        "entry_id": self._entry.entry_id,
+                        "conversation_id": conversation_id,
+                        "message_id": message_id,
+                        "sender": (message.get("creator") or {}).get("displayName"),
+                        "created_at": message.get("createdAt"),
+                    },
+                )

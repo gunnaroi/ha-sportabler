@@ -9,14 +9,16 @@ from the app's own network traffic — there is no public API.
   - A `calendar.<child>` entity listing their upcoming events (practices, matches, etc.)
   - A `sensor.<child>_next_activity` entity with the next event's time, location, team, and
     your current attendance response (`going` / `not_going` / `not_responded`) as attributes
-- Two account-level sensors: **Latest feed post** (manual refresh) and
-  **Conversations**. The Conversations sensor checks the full inbox hourly from
+- Three account-level sensors: **Latest feed post** (manual refresh),
+  **Conversations**, and **Unread messages**. The Conversations sensor checks the full inbox hourly from
   07:00 through 22:00 in Home Assistant's local timezone. Its attributes show
   each conversation's latest message and the total number of messages stored.
   When the latest message ID changes, the integration fetches that conversation's
   new messages and saves them by ID in Home Assistant's private local storage.
-  Unchanged conversations do not trigger history requests. The first check saves
-  the latest message as a baseline; it does not automatically import old history.
+  Unchanged conversations do not trigger history requests. The **Unread messages**
+  sensor reports the inbox's unread count, and each newly saved message fires a
+  `sportabler_message` event for automations. The first check saves the latest
+  message as a baseline; it does not automatically import old history.
 - A `sportabler.set_attendance` service to RSVP a child to an event from an automation
   or dashboard button (fields: `child_id`, `event_id`, `status: G|N` — ids are visible in
   the sensor's `event_id` attribute and the device's identifiers)

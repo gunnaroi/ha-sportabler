@@ -13,6 +13,7 @@ from custom_components.sportabler.message_archive import MessageArchive
 from custom_components.sportabler.sensor import (
     SportablerConversationsSensor,
     SportablerFeedSensor,
+    SportablerUnreadMessagesSensor,
     async_setup_entry,
 )
 
@@ -66,8 +67,10 @@ def fixtures():
     archive = MessageArchive.__new__(MessageArchive)
     archive._store = SimpleNamespace(async_save=AsyncMock())
     archive._conversations = {}
+    archive._has_snapshot = False
     archive._sync_lock = asyncio.Lock()
     hass = SimpleNamespace(
+        bus=SimpleNamespace(async_fire=Mock()),
         data={
             "sportabler": {
                 entry.entry_id: {
@@ -76,7 +79,7 @@ def fixtures():
                     "coordinator": SimpleNamespace(data={"children": {}}),
                 }
             }
-        }
+        },
     )
     return hass, entry, client
 
@@ -86,8 +89,13 @@ async def test_entities_exist_without_message_requests():
     add = Mock()
     await async_setup_entry(hass, entry, add)
     entities = add.call_args.args[0]
-    assert len(entities) == 2
-    assert {entity.name for entity in entities} == {"Latest feed post", "Conversations"}
+    assert len(entities) == 3
+    assert {entity.name for entity in entities} == {
+        "Latest feed post",
+        "Conversations",
+        "Unread messages",
+    }
+    assert entities[-1].native_value is None
     assert all(entity.should_poll is False for entity in entities)
     client.async_get_news_feed.assert_not_awaited()
     client.async_get_conversations.assert_not_awaited()
@@ -168,6 +176,7 @@ async def test_new_latest_message_is_detected_after_initial_snapshot():
     inbox = SportablerConversationsSensor(
         entry, client, _hass.data["sportabler"][entry.entry_id]["archive"]
     )
+    inbox.hass = _hass
     await inbox.async_update()
     client.async_get_conversations.return_value["items"][0]["messages"]["edges"][0][
         "node"
@@ -190,6 +199,10 @@ async def test_new_latest_message_is_detected_after_initial_snapshot():
     assert inbox.extra_state_attributes["new_message_conversation_ids"] == [
         "conversation-1"
     ]
+    _hass.bus.async_fire.assert_called_once()
+    assert _hass.bus.async_fire.call_args.args[0] == "sportabler_message"
+    assert _hass.bus.async_fire.call_args.args[1]["message_id"] == "message-2"
+    assert "body" not in _hass.bus.async_fire.call_args.args[1]
     assert (
         inbox.extra_state_attributes["conversations"][0]["latest_message"]["body"]
         == "New time"
@@ -216,3 +229,33 @@ async def test_inbox_sync_reads_all_conversation_pages():
     assert archive.conversation("conversation-2") is not None
     assert client.async_get_conversations.await_args_list[0].args == (30, None)
     assert client.async_get_conversations.await_args_list[1].args == (30, "next")
+
+
+async def test_each_saved_message_emits_event_and_unread_sensor_updates():
+    _hass, entry, client = fixtures()
+    archive = _hass.data["sportabler"][entry.entry_id]["archive"]
+    unread = SportablerUnreadMessagesSensor(entry, archive)
+    unread.platform = Mock()
+    unread.async_write_ha_state = Mock()
+    inbox = SportablerConversationsSensor(entry, client, archive, unread)
+    inbox.hass = _hass
+    await inbox.async_update()
+    assert unread.native_value == 2
+    assert _hass.bus.async_fire.call_count == 0
+    client.async_get_conversations.return_value["items"][0]["messages"]["edges"][0][
+        "node"
+    ]["id"] = "m3"
+    client.async_get_conversation_messages.return_value = {
+        "items": [
+            {"id": "m3", "createdAt": "2026-09-22T12:03:00Z"},
+            {"id": "m2", "createdAt": "2026-09-22T12:02:00Z"},
+            {"id": "message-1", "createdAt": "2026-09-22T12:01:00Z"},
+        ],
+        "page_info": PAGE,
+    }
+    await inbox.async_update()
+    assert _hass.bus.async_fire.call_count == 2
+    assert [
+        call.args[1]["message_id"] for call in _hass.bus.async_fire.call_args_list
+    ] == ["m3", "m2"]
+    assert unread.async_write_ha_state.call_count == 2
