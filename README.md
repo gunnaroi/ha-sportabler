@@ -11,9 +11,10 @@ from the app's own network traffic — there is no public API.
     your current attendance response (`going` / `not_going` / `not_responded`) as attributes
 - Two account-level snapshot sensors: **Latest feed post** (body and author as
   attributes) and **Conversations** (one page of conversation IDs, names, and
-  unread counts). They exist immediately after restart and fetch only when
-  explicitly refreshed. No message-history sensor or background message polling
-  is created.
+  unread counts). The Conversations sensor refreshes once per hour from 07:00
+  through 22:00 in Home Assistant's local timezone (16 requests per day with
+  continuous uptime). The feed sensor remains manual-only. Conversation histories
+  are fetched only on demand.
 - A `sportabler.set_attendance` service to RSVP a child to an event from an automation
   or dashboard button (fields: `child_id`, `event_id`, `status: G|N` — ids are visible in
   the sensor's `event_id` attribute and the device's identifiers)
@@ -51,6 +52,8 @@ entity. Saving options reloads the integration and fetches once.
 
 Profiles are cached for 24 hours in memory. With continuous uptime, hourly mode
 makes roughly 25 requests per day per account, compared with 192 previously.
+The daytime Conversations sensor adds up to 16 inbox-metadata requests per day,
+for roughly 41 scheduled requests per day per account with hourly calendar mode.
 Startup, reloads, manual updates, and attendance submissions add requests.
 Less frequent updates mean schedule changes reach Home Assistant later.
 
@@ -82,17 +85,19 @@ Home Assistant Actions provides four **administrator-only, read-only** actions:
   a `get_conversations` result and
   returns one page of messages (default 30).
 
-To refresh either new sensor, run `homeassistant.update_entity` for that sensor
-under **Developer Tools → Actions**. Its initial value is unknown until the
-first refresh. Refreshing one sensor makes one Abler request and does not update
-the other. The feed body and conversation names are then stored as Home Assistant
-state attributes and may be retained by Recorder; use the response actions below
+To refresh either sensor immediately, run `homeassistant.update_entity` for that
+sensor under **Developer Tools → Actions**. The Conversations sensor remains
+unknown until its first scheduled or manual refresh; the feed sensor remains
+unknown until manually refreshed. Refreshing one sensor makes one Abler request
+and does not update the other. The feed body and conversation names are then
+stored as Home Assistant state attributes and may be retained by Recorder; use the response actions below
 if you do not want that persistence.
 
 These actions return `items` and `page_info`. If `page_info.hasNextPage` is true,
 pass `page_info.endCursor` as `after` on the next call. Each action fetches **one
 page only**, up to 30 items. Calling an action makes one request; these features
-add no scheduled polling, automatic pagination, or message state changes. The
+add no automatic pagination or conversation-history polling. Only the
+Conversations sensor has a scheduled inbox-metadata refresh. The
 integration does not call Abler's `MarkAsRead` mutation. The conversation-history action returns message bodies only in its response;
 there is no conversation-history entity. Automations that save or forward action
 responses may retain them elsewhere.
@@ -104,9 +109,9 @@ based on observed Abler web-client traffic and have not been validated against
 an installed Home Assistant instance or a live Abler session.
 
 Conversation discovery uses the observed `message` inbox-list query. It runs
-only when `get_conversations` is called, retrieves a single page, and does not
-fetch every conversation's history. `getMessageUnreadCount` only returns a
-number; `MarkAsRead` changes read state. Neither is used for discovery. Do not
+for the scheduled Conversations sensor refresh or when `get_conversations` is
+called. Each retrieval gets a single page and does not fetch every conversation's
+history. `getMessageUnreadCount` only returns a number; `MarkAsRead` changes read state. Neither is used for discovery. Do not
 paste authentication headers or cookies when sharing captures.
 
 ## Notes / limitations

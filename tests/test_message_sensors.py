@@ -1,9 +1,10 @@
-"""Message snapshot entities make no network calls until explicitly refreshed."""
+"""Message sensors fetch only on manual refresh or the daytime inbox timer."""
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.sportabler.api import AblerApiError
@@ -67,7 +68,7 @@ async def test_entities_exist_without_message_requests():
 
 
 async def test_manual_refresh_updates_only_selected_entity():
-    hass, entry, client = fixtures()
+    _hass, entry, client = fixtures()
     feed = SportablerFeedSensor(entry, client)
     inbox = SportablerConversationsSensor(entry, client)
     assert feed.native_value is None
@@ -85,10 +86,34 @@ async def test_manual_refresh_updates_only_selected_entity():
 
 
 async def test_failed_refresh_preserves_previous_snapshot():
-    hass, entry, client = fixtures()
+    _hass, entry, client = fixtures()
     feed = SportablerFeedSensor(entry, client)
     await feed.async_update()
     client.async_get_news_feed.side_effect = AblerApiError("cooldown")
     with pytest.raises(HomeAssistantError):
         await feed.async_update()
     assert feed.native_value == "42"
+
+
+async def test_conversation_schedule_is_local_daytime_only():
+    hass, entry, client = fixtures()
+    inbox = SportablerConversationsSensor(entry, client)
+    inbox.hass = hass
+    cancel = Mock()
+    with (
+        patch.object(SensorEntity, "async_added_to_hass", new_callable=AsyncMock),
+        patch(
+            "custom_components.sportabler.sensor.async_track_time_change",
+            return_value=cancel,
+        ) as track,
+        patch.object(inbox, "async_schedule_update_ha_state") as schedule,
+    ):
+        await inbox.async_added_to_hass()
+        track.assert_called_once()
+        assert track.call_args.kwargs == {
+            "hour": range(7, 23),
+            "minute": 0,
+            "second": 0,
+        }
+        track.call_args.args[1](None)
+        schedule.assert_called_once_with(True)

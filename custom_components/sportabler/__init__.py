@@ -70,7 +70,7 @@ CONVERSATION_SCHEMA = vol.Schema(
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register explicit, admin-only reads; no message update timer is installed."""
+    """Register explicit, admin-only response actions."""
 
     def selected_client(call: ServiceCall):
         entries = hass.data.get(DOMAIN, {})

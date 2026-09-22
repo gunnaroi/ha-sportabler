@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
@@ -136,13 +137,26 @@ class SportablerFeedSensor(_SportablerManualSensor):
 
 
 class SportablerConversationsSensor(_SportablerManualSensor):
-    """Conversation catalog metadata from an explicit inbox refresh."""
+    """Conversation metadata refreshed hourly during the daytime."""
 
     _attr_name = "Conversations"
 
     def __init__(self, entry: ConfigEntry, client: AblerApiClient) -> None:
         super().__init__(entry, client)
         self._attr_unique_id = f"{entry.entry_id}_conversations"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+
+        @callback
+        def refresh_inbox(_now) -> None:
+            self.async_schedule_update_ha_state(True)
+
+        self.async_on_remove(
+            async_track_time_change(
+                self.hass, refresh_inbox, hour=range(7, 23), minute=0, second=0
+            )
+        )
 
     async def async_update(self) -> None:
         page = await self._fetch(lambda: self._client.async_get_conversations())
