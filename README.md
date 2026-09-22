@@ -78,6 +78,35 @@ Less frequent updates mean schedule changes reach Home Assistant later.
 - Profile caches and cooldowns are in memory and reset on restart/reload. Restarting
   repeatedly causes new requests; it is not a way to resolve a rate limit.
 
+## Chat view in Home Assistant
+
+Version 0.4.0 includes a read-only dashboard card styled like an Abler conversation:
+a conversation list, sender initials, date labels, timestamps, and message bubbles.
+It reads Home Assistant's local message archive when you open a conversation,
+so opening the card does not contact Abler or mark messages as read there.
+
+After updating the integration and restarting Home Assistant, add a dashboard
+resource at **Settings → Dashboards → Resources** with URL
+`/sportabler/chat-card.js?v=0.4.0` and type **JavaScript module**. Then add a
+**Manual** card to a dashboard:
+
+```yaml
+type: custom:sportabler-chat-card
+entity: sensor.YOUR_CONVERSATIONS_ENTITY
+```
+
+Replace the entity ID with the actual **Conversations** sensor ID from
+**Settings → Devices & Services → Sportabler → Entities**. A browser reload
+may be needed after adding the resource. The card requires a Home Assistant
+administrator account to read the private archive.
+
+The first inbox check stores only the latest message in each conversation.
+Use **Load earlier messages from Abler** in a thread to fetch and save one page
+of up to 30 older messages per tap. You can then page through the locally saved
+messages without further Abler requests. Historical imports do not trigger
+`sportabler_message` events or change Abler's read status. The card does not
+send messages; that API operation has not been verified.
+
 ## Messages and stored history
 
 The **Conversations** sensor refreshes on startup during daytime and then at the

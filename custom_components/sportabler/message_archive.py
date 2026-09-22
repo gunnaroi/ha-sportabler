@@ -75,6 +75,25 @@ class MessageArchive:
             "sync_pending": bool(conversation.get("pending")),
         }
 
+    async def async_import_page(
+        self, conversation_id: str, page: dict[str, Any]
+    ) -> int:
+        """Save one user-requested history page without treating it as new mail."""
+        async with self._sync_lock:
+            conversation = self._conversations.get(conversation_id)
+            if conversation is None:
+                raise ValueError("Conversation is not stored")
+            messages = conversation.setdefault("messages", {})
+            count = 0
+            for item in page["items"]:
+                message_id = str(item["id"])
+                if message_id not in messages:
+                    messages[message_id] = item
+                    count += 1
+            if count:
+                await self.async_save()
+            return count
+
     @property
     def unread_count(self) -> int | None:
         if not self._has_snapshot:

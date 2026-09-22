@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from homeassistant.core import SupportsResponse
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, Unauthorized
 from test_requests import Response, client_with
 
 from custom_components import sportabler
@@ -163,7 +163,11 @@ async def test_actions_require_admin_and_select_one_account(monkeypatch):
         client=two,
         coordinator=SimpleNamespace(entry=SimpleNamespace(async_start_reauth=Mock())),
     )
-    hass = SimpleNamespace(data={"sportabler": {"one": vars(entry1)}})
+    monkeypatch.setattr(sportabler.websocket_api, "async_register_command", Mock())
+    hass = SimpleNamespace(
+        data={"sportabler": {"one": vars(entry1)}},
+        http=SimpleNamespace(async_register_static_paths=AsyncMock()),
+    )
     assert await sportabler.async_setup(hass, {}) is True
     assert set(registrations) == {
         "get_feed",
@@ -213,12 +217,14 @@ async def test_auth_failure_requests_reauth_without_message_mutation(monkeypatch
     client = SimpleNamespace(
         async_get_conversation_messages=AsyncMock(side_effect=AblerAuthError("expired"))
     )
+    monkeypatch.setattr(sportabler.websocket_api, "async_register_command", Mock())
     hass = SimpleNamespace(
         data={
             "sportabler": {
                 "one": {"client": client, "coordinator": SimpleNamespace(entry=entry)}
             }
-        }
+        },
+        http=SimpleNamespace(async_register_static_paths=AsyncMock()),
     )
     await sportabler.async_setup(hass, {})
     handler, schema = registrations["get_conversation_messages"]
@@ -255,3 +261,114 @@ async def test_conversation_discovery_is_one_page_with_latest_message():
     }
     assert "messageBody" in QUERY_CONVERSATIONS
     assert "messages(first: 1)" in QUERY_CONVERSATIONS
+
+
+def test_chat_websocket_reads_only_local_archive():
+    archive = SimpleNamespace(messages=Mock(return_value={"items": [{"id": "m1"}]}))
+    hass = SimpleNamespace(data={"sportabler": {"one": {"archive": archive}}})
+    connection = SimpleNamespace(
+        user=SimpleNamespace(is_admin=True), send_result=Mock(), send_error=Mock()
+    )
+    sportabler.websocket_stored_messages(
+        hass,
+        connection,
+        {
+            "id": 7,
+            "type": "sportabler/stored_messages",
+            "entry_id": "one",
+            "conversation_id": "conversation-1",
+            "first": 30,
+        },
+    )
+    archive.messages.assert_called_once_with("conversation-1", 30, None)
+    connection.send_result.assert_called_once_with(7, {"items": [{"id": "m1"}]})
+    connection.send_error.assert_not_called()
+
+
+def test_chat_websocket_rejects_non_admin():
+    hass = SimpleNamespace(data={"sportabler": {}})
+    connection = SimpleNamespace(user=SimpleNamespace(is_admin=False))
+    with pytest.raises(Unauthorized):
+        sportabler.websocket_stored_messages(
+            hass,
+            connection,
+            {
+                "id": 7,
+                "type": "sportabler/stored_messages",
+                "entry_id": "one",
+                "conversation_id": "c",
+                "first": 30,
+            },
+        )
+
+
+async def test_chat_import_fetches_one_page_and_archives_it():
+    page = {"items": [{"id": "older"}], "page_info": {"hasNextPage": False}}
+    archive = SimpleNamespace(
+        conversation=Mock(return_value={"messages": {}}),
+        async_import_page=AsyncMock(return_value=1),
+    )
+    client = SimpleNamespace(
+        async_get_conversation_messages=AsyncMock(return_value=page)
+    )
+    hass = SimpleNamespace(
+        data={
+            "sportabler": {
+                "one": {
+                    "archive": archive,
+                    "client": client,
+                }
+            }
+        }
+    )
+    connection = SimpleNamespace(
+        user=SimpleNamespace(is_admin=True), send_result=Mock(), send_error=Mock()
+    )
+    await sportabler.websocket_import_messages.__wrapped__.__wrapped__(
+        hass,
+        connection,
+        {
+            "id": 8,
+            "type": "sportabler/import_messages",
+            "entry_id": "one",
+            "conversation_id": "conversation-1",
+            "first": 30,
+        },
+    )
+    client.async_get_conversation_messages.assert_awaited_once_with(
+        "conversation-1", 30, None
+    )
+    archive.async_import_page.assert_awaited_once_with("conversation-1", page)
+    connection.send_result.assert_called_once_with(8, {**page, "added": 1})
+    connection.send_error.assert_not_called()
+
+
+async def test_chat_import_rejects_unknown_conversation_without_request():
+    archive = SimpleNamespace(conversation=Mock(return_value=None))
+    client = SimpleNamespace(async_get_conversation_messages=AsyncMock())
+    hass = SimpleNamespace(
+        data={
+            "sportabler": {
+                "one": {
+                    "archive": archive,
+                    "client": client,
+                }
+            }
+        }
+    )
+    connection = SimpleNamespace(
+        user=SimpleNamespace(is_admin=True), send_result=Mock(), send_error=Mock()
+    )
+    await sportabler.websocket_import_messages.__wrapped__.__wrapped__(
+        hass,
+        connection,
+        {
+            "id": 8,
+            "type": "sportabler/import_messages",
+            "entry_id": "one",
+            "conversation_id": "unknown",
+            "first": 30,
+        },
+    )
+    client.async_get_conversation_messages.assert_not_awaited()
+    connection.send_error.assert_called_once()

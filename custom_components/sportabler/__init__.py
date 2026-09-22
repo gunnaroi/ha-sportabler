@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from pathlib import Path
 
 import aiohttp
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
+from homeassistant.components import websocket_api
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
 from homeassistant.exceptions import HomeAssistantError
@@ -70,8 +73,92 @@ CONVERSATION_SCHEMA = vol.Schema(
 )
 
 
+@callback
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "sportabler/stored_messages",
+        vol.Required("entry_id"): cv.string,
+        vol.Required("conversation_id"): cv.string,
+        vol.Optional("first", default=30): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=30)
+        ),
+        vol.Optional("after"): cv.string,
+    }
+)
+def websocket_stored_messages(hass, connection, msg: dict) -> None:
+    """Return a page of locally archived messages to the chat card."""
+    selected = hass.data.get(DOMAIN, {}).get(msg["entry_id"])
+    if selected is None:
+        connection.send_error(msg["id"], websocket_api.ERR_NOT_FOUND, "Unknown account")
+        return
+    try:
+        result = selected["archive"].messages(
+            msg["conversation_id"], msg["first"], msg.get("after")
+        )
+    except ValueError as err:
+        connection.send_error(msg["id"], websocket_api.ERR_NOT_FOUND, str(err))
+        return
+    connection.send_result(msg["id"], result)
+
+
+@callback
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "sportabler/import_messages",
+        vol.Required("entry_id"): cv.string,
+        vol.Required("conversation_id"): cv.string,
+        vol.Optional("first", default=30): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=30)
+        ),
+        vol.Optional("after"): cv.string,
+    }
+)
+@websocket_api.async_response
+async def websocket_import_messages(hass, connection, msg: dict) -> None:
+    """Import one history page only when an administrator asks for it."""
+    selected = hass.data.get(DOMAIN, {}).get(msg["entry_id"])
+    if (
+        selected is None
+        or selected["archive"].conversation(msg["conversation_id"]) is None
+    ):
+        connection.send_error(
+            msg["id"], websocket_api.ERR_NOT_FOUND, "Unknown conversation"
+        )
+        return
+    try:
+        page = await selected["client"].async_get_conversation_messages(
+            msg["conversation_id"], msg["first"], msg.get("after")
+        )
+        added = await selected["archive"].async_import_page(
+            msg["conversation_id"], page
+        )
+    except AblerAuthError:
+        selected["coordinator"].entry.async_start_reauth(hass)
+        connection.send_error(
+            msg["id"], "auth_required", "Sportabler requires re-authentication"
+        )
+        return
+    except (AblerApiError, ValueError) as err:
+        connection.send_error(msg["id"], "request_failed", str(err))
+        return
+    connection.send_result(msg["id"], {**page, "added": added})
+
+
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register explicit, admin-only response actions."""
+    """Register read-only message actions and the chat-card data endpoint."""
+    websocket_api.async_register_command(hass, websocket_stored_messages)
+    websocket_api.async_register_command(hass, websocket_import_messages)
+    await hass.http.async_register_static_paths(
+        [
+            StaticPathConfig(
+                "/sportabler/chat-card.js",
+                str(Path(__file__).parent / "frontend" / "chat-card.js"),
+                False,
+            )
+        ]
+    )
 
     def selected_client(call: ServiceCall):
         entries = hass.data.get(DOMAIN, {})

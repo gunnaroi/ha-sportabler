@@ -133,6 +133,7 @@ async def test_manual_refresh_updates_only_selected_entity():
     ]
     assert inbox.extra_state_attributes["new_message_conversation_ids"] == []
     assert inbox.extra_state_attributes["stored_message_count"] == 1
+    assert inbox.extra_state_attributes["entry_id"] == entry.entry_id
     client.async_get_news_feed.assert_awaited_once()
 
 

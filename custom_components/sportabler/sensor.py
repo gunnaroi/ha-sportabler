@@ -253,6 +253,17 @@ class SportablerConversationsSensor(_SportablerManualSensor):
             )
         self._attr_native_value = len(conversations)
         self._attr_extra_state_attributes = {
+            "entry_id": self._entry.entry_id,
+            "viewer_id": (
+                getattr(
+                    self.hass.data[DOMAIN][self._entry.entry_id]["coordinator"],
+                    "_me",
+                    None,
+                )
+                or {}
+            ).get("id")
+            if self.hass
+            else None,
             "conversations": conversations,
             "new_message_conversation_ids": list(new_ids),
             "stored_message_count": self._archive.message_count,
