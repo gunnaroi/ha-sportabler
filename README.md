@@ -9,6 +9,11 @@ from the app's own network traffic — there is no public API.
   - A `calendar.<child>` entity listing their upcoming events (practices, matches, etc.)
   - A `sensor.<child>_next_activity` entity with the next event's time, location, team, and
     your current attendance response (`going` / `not_going` / `not_responded`) as attributes
+- Two account-level snapshot sensors: **Latest feed post** (body and author as
+  attributes) and **Conversations** (one page of conversation IDs, names, and
+  unread counts). They exist immediately after restart and fetch only when
+  explicitly refreshed. No message-history sensor or background message polling
+  is created.
 - A `sportabler.set_attendance` service to RSVP a child to an event from an automation
   or dashboard button (fields: `child_id`, `event_id`, `status: G|N` — ids are visible in
   the sensor's `event_id` attribute and the device's identifiers)
@@ -77,14 +82,20 @@ Home Assistant Actions provides four **administrator-only, read-only** actions:
   a `get_conversations` result and
   returns one page of messages (default 30).
 
+To refresh either new sensor, run `homeassistant.update_entity` for that sensor
+under **Developer Tools → Actions**. Its initial value is unknown until the
+first refresh. Refreshing one sensor makes one Abler request and does not update
+the other. The feed body and conversation names are then stored as Home Assistant
+state attributes and may be retained by Recorder; use the response actions below
+if you do not want that persistence.
+
 These actions return `items` and `page_info`. If `page_info.hasNextPage` is true,
 pass `page_info.endCursor` as `after` on the next call. Each action fetches **one
 page only**, up to 30 items. Calling an action makes one request; these features
 add no scheduled polling, automatic pagination, or message state changes. The
-integration does not call Abler's `MarkAsRead` mutation. Message bodies appear
-only in the requested action response and are not stored in Home Assistant
-entity attributes by this integration. Automations that save or forward the
-response may retain it elsewhere.
+integration does not call Abler's `MarkAsRead` mutation. The conversation-history action returns message bodies only in its response;
+there is no conversation-history entity. Automations that save or forward action
+responses may retain them elsewhere.
 
 For multiple Sportabler accounts, include `entry_id` to select one; with one
 account it is optional. The actions use the same rotating session token,
