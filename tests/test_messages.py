@@ -14,6 +14,7 @@ from custom_components.sportabler.api import (
     AblerAuthError,
 )
 from custom_components.sportabler.const import GRAPHQL_URL, POSTS_GRAPHQL_URL
+from custom_components.sportabler.message_queries import QUERY_CONVERSATIONS
 
 PAGE = {
     "hasNextPage": False,
@@ -138,6 +139,9 @@ async def test_actions_require_admin_and_select_one_account(monkeypatch):
         async_get_conversation_messages=AsyncMock(
             return_value={"items": [], "page_info": PAGE}
         ),
+        async_get_conversations=AsyncMock(
+            return_value={"items": [], "page_info": PAGE}
+        ),
     )
     two = SimpleNamespace(
         **{
@@ -162,6 +166,7 @@ async def test_actions_require_admin_and_select_one_account(monkeypatch):
     assert set(registrations) == {
         "get_feed",
         "get_post_comments",
+        "get_conversations",
         "get_conversation_messages",
     }
     feed, schema = registrations["get_feed"]
@@ -172,6 +177,9 @@ async def test_actions_require_admin_and_select_one_account(monkeypatch):
         await feed(SimpleNamespace(data=schema({})))
     await feed(SimpleNamespace(data=schema({"entry_id": "two"})))
     two.async_get_news_feed.assert_awaited_once_with(5, None)
+    inbox, schema = registrations["get_conversations"]
+    await inbox(SimpleNamespace(data=schema({"entry_id": "one", "after": "cursor-1"})))
+    one.async_get_conversations.assert_awaited_once_with(20, "cursor-1")
     conversation, schema = registrations["get_conversation_messages"]
     await conversation(
         SimpleNamespace(
@@ -210,3 +218,31 @@ async def test_auth_failure_requests_reauth_without_message_mutation(monkeypatch
             SimpleNamespace(data=schema({"conversation_id": "conversation-1"}))
         )
     entry.async_start_reauth.assert_called_once_with(hass)
+
+
+async def test_conversation_discovery_is_one_page_and_metadata_only():
+    page = {
+        "hasNextPage": True,
+        "hasPreviousPage": False,
+        "startCursor": "a",
+        "endCursor": "b",
+    }
+    nodes = [
+        {"id": f"conversation-{i}", "name": f"Conversation {i}", "unreadCount": 0}
+        for i in range(20)
+    ]
+    client, session = client_with(
+        Response({"data": {"message": connection(nodes, page)}})
+    )
+    result = await client.async_get_conversations()
+    assert len(result["items"]) == 20
+    assert result["page_info"]["hasNextPage"] is True
+    assert session.post.call_count == 1
+    assert session.post.call_args.args == (GRAPHQL_URL,)
+    assert session.post.call_args.kwargs["json"]["variables"] == {
+        "id": None,
+        "first": 20,
+        "cursor": None,
+    }
+    assert "messageBody" not in QUERY_CONVERSATIONS
+    assert "messages(" not in QUERY_CONVERSATIONS

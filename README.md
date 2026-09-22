@@ -66,12 +66,15 @@ Less frequent updates mean schedule changes reach Home Assistant later.
 
 ## Feed and conversation reads
 
-Home Assistant Actions provides three **administrator-only, read-only** actions:
+Home Assistant Actions provides four **administrator-only, read-only** actions:
 
 - `sportabler.get_feed` returns one page of feed posts (default 5).
 - `sportabler.get_post_comments` takes a numeric `post_id` from a feed result and
   returns one page of comments (default 5).
-- `sportabler.get_conversation_messages` takes an exact `conversation_id` and
+- `sportabler.get_conversations` discovers one page of conversation IDs and
+  labels (default 20), without fetching message bodies.
+- `sportabler.get_conversation_messages` takes an exact `conversation_id` from
+  a `get_conversations` result and
   returns one page of messages (default 30).
 
 These actions return `items` and `page_info`. If `page_info.hasNextPage` is true,
@@ -89,11 +92,11 @@ serialized request handling, and cooldown as the calendar. The requests are
 based on observed Abler web-client traffic and have not been validated against
 an installed Home Assistant instance or a live Abler session.
 
-Automatic conversation discovery is pending the Abler inbox-list query and its
-response. `getMessageUnreadCount` only returns a number; `MarkAsRead` changes
-read state. Neither returns a conversation list. Discovery should fetch that
-list on demand and cache its IDs, without requesting every conversation's
-history. Do not paste authentication headers or cookies when sharing captures.
+Conversation discovery uses the observed `message` inbox-list query. It runs
+only when `get_conversations` is called, retrieves a single page, and does not
+fetch every conversation's history. `getMessageUnreadCount` only returns a
+number; `MarkAsRead` changes read state. Neither is used for discovery. Do not
+paste authentication headers or cookies when sharing captures.
 
 ## Notes / limitations
 

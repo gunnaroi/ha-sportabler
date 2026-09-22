@@ -19,11 +19,17 @@ import aiohttp
 from .const import GRAPHQL_URL, POSTS_GRAPHQL_URL
 from .message_queries import (
     QUERY_CONVERSATION_MESSAGES,
+    QUERY_CONVERSATIONS,
     QUERY_NEWS_FEED,
     QUERY_POST_COMMENTS,
 )
 
-MESSAGE_OPERATIONS = {"myNewsFeed", "getPostComments", "conversationMessages"}
+MESSAGE_OPERATIONS = {
+    "myNewsFeed",
+    "getPostComments",
+    "conversationMessages",
+    "message",
+}
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -244,6 +250,7 @@ class AblerApiClient:
             "myNewsFeed": "myNewsFeed",
             "getPostComments": "getPostComments",
             "conversationMessages": "conversationMessages",
+            "message": "message",
         }[operation_name]
         value = data.get(field)
         valid = isinstance(value, dict)
@@ -322,6 +329,24 @@ class AblerApiClient:
             {"postId": post_id, "first": first, "after": after},
         )
         return _connection_response(data["getPostComments"])
+
+    async def async_get_conversations(
+        self,
+        first: int = 20,
+        after: str | None = None,
+    ) -> dict:
+        """List one page of conversation IDs without fetching message bodies."""
+        _validate_page(first, after)
+        data = await self._post(
+            "message",
+            QUERY_CONVERSATIONS,
+            {
+                "id": None,
+                "first": first,
+                "cursor": after,
+            },
+        )
+        return _connection_response(data["message"])
 
     async def async_get_conversation_messages(
         self,

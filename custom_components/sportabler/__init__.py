@@ -48,6 +48,15 @@ MESSAGE_SCHEMA = vol.Schema(
 COMMENTS_SCHEMA = MESSAGE_SCHEMA.extend(
     {vol.Required("post_id"): vol.All(vol.Coerce(int), vol.Range(min=1))}
 )
+CONVERSATION_LIST_SCHEMA = vol.Schema(
+    {
+        vol.Optional("entry_id"): cv.string,
+        vol.Optional("first", default=20): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=30)
+        ),
+        vol.Optional("after"): cv.string,
+    }
+)
 CONVERSATION_SCHEMA = vol.Schema(
     {
         vol.Optional("entry_id"): cv.string,
@@ -102,6 +111,18 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         except AblerApiError as err:
             raise HomeAssistantError(f"Sportabler: {err}") from err
 
+    async def get_conversations(call: ServiceCall) -> dict:
+        selected = selected_client(call)
+        try:
+            return await selected["client"].async_get_conversations(
+                call.data["first"], call.data.get("after")
+            )
+        except AblerAuthError as err:
+            selected["coordinator"].entry.async_start_reauth(hass)
+            raise HomeAssistantError("Sportabler requires re-authentication") from err
+        except AblerApiError as err:
+            raise HomeAssistantError(f"Sportabler: {err}") from err
+
     async def get_conversation(call: ServiceCall) -> dict:
         selected = selected_client(call)
         try:
@@ -117,6 +138,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     for name, handler, schema in (
         ("get_feed", get_feed, MESSAGE_SCHEMA),
         ("get_post_comments", get_comments, COMMENTS_SCHEMA),
+        ("get_conversations", get_conversations, CONVERSATION_LIST_SCHEMA),
         ("get_conversation_messages", get_conversation, CONVERSATION_SCHEMA),
     ):
         async_register_admin_service(

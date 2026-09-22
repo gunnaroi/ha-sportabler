@@ -106,3 +106,26 @@ get_conversation_messages:
       description: Pass the previous response's page_info.endCursor for the next page.
       selector:
         text:
+
+get_conversations:
+  name: Get conversations
+  description: Discover one page of conversation IDs on demand. Requires administrator access. Does not fetch message bodies or mark conversations as read.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Sportabler config entry ID; optional for a single account.
+      selector:
+        text:
+    first:
+      name: Page size
+      description: Number of conversations, from 1 to 30 (default 20).
+      selector:
+        number:
+          min: 1
+          max: 30
+          mode: box
+    after:
+      name: After cursor
+      description: Pass the previous response's page_info.endCursor for the next page.
+      selector:
+        text:

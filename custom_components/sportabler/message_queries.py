@@ -202,3 +202,23 @@ query conversationMessages($pagination: PaginationType!, $conversationIds: [ID!]
   }
 }
 """
+
+QUERY_CONVERSATIONS = """
+query message($id: String, $first: Int, $cursor: String) {
+  message(id: $id, after: $cursor, first: $first) {
+    edges {
+      node {
+        id
+        name
+        user1 { id displayName }
+        user2 { id displayName }
+        membersCount
+        conversationType
+        messageGroup { id name }
+        unreadCount
+      }
+    }
+    pageInfo { hasNextPage hasPreviousPage startCursor endCursor }
+  }
+}
+"""
