@@ -16,7 +16,14 @@ from typing import Any
 
 import aiohttp
 
-from .const import GRAPHQL_URL
+from .const import GRAPHQL_URL, POSTS_GRAPHQL_URL
+from .message_queries import (
+    QUERY_CONVERSATION_MESSAGES,
+    QUERY_NEWS_FEED,
+    QUERY_POST_COMMENTS,
+)
+
+MESSAGE_OPERATIONS = {"myNewsFeed", "getPostComments", "conversationMessages"}
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -187,7 +194,9 @@ class AblerApiClient:
             "variables": variables,
         }
         async with self._session.post(
-            GRAPHQL_URL,
+            POSTS_GRAPHQL_URL
+            if operation_name in {"myNewsFeed", "getPostComments"}
+            else GRAPHQL_URL,
             json=payload,
             headers=headers,
             timeout=aiohttp.ClientTimeout(total=30),
@@ -232,6 +241,9 @@ class AblerApiClient:
             "me": "me",
             "scheduleV2": "scheduleV2",
             "setPlayerAttendance": "setPlayerAttendanceV3",
+            "myNewsFeed": "myNewsFeed",
+            "getPostComments": "getPostComments",
+            "conversationMessages": "conversationMessages",
         }[operation_name]
         value = data.get(field)
         valid = isinstance(value, dict)
@@ -241,6 +253,8 @@ class AblerApiClient:
             )
         elif valid and operation_name == "scheduleV2":
             valid = isinstance(value.get("page"), list)
+        elif valid and operation_name in MESSAGE_OPERATIONS:
+            valid = _valid_connection(value)
         if not valid:
             self._backoff()
             raise AblerApiError("Incomplete Sportabler response; requests paused")
@@ -283,3 +297,87 @@ class AblerApiClient:
             "setPlayerAttendance", MUTATION_SET_ATTENDANCE, variables
         )
         return data["setPlayerAttendanceV3"]
+
+    async def async_get_news_feed(
+        self, first: int = 5, after: str | None = None
+    ) -> dict:
+        _validate_page(first, after)
+        data = await self._post(
+            "myNewsFeed", QUERY_NEWS_FEED, {"first": first, "after": after}
+        )
+        return _connection_response(data["myNewsFeed"])
+
+    async def async_get_post_comments(
+        self,
+        post_id: int,
+        first: int = 2,
+        after: str | None = None,
+    ) -> dict:
+        _validate_page(first, after)
+        if type(post_id) is not int or post_id < 1:
+            raise AblerApiError("A positive post ID is required")
+        data = await self._post(
+            "getPostComments",
+            QUERY_POST_COMMENTS,
+            {"postId": post_id, "first": first, "after": after},
+        )
+        return _connection_response(data["getPostComments"])
+
+    async def async_get_conversation_messages(
+        self,
+        conversation_id: str,
+        first: int = 30,
+        after: str | None = None,
+    ) -> dict:
+        _validate_page(first, after)
+        if not isinstance(conversation_id, str) or not conversation_id.strip():
+            raise AblerApiError("A conversation ID is required")
+        data = await self._post(
+            "conversationMessages",
+            QUERY_CONVERSATION_MESSAGES,
+            {
+                "conversationIds": [conversation_id],
+                "pagination": {"first": first, "after": after},
+            },
+        )
+        return _connection_response(data["conversationMessages"])
+
+
+def _validate_page(first: int, after: str | None) -> None:
+    if type(first) is not int or not 1 <= first <= 30:
+        raise AblerApiError("Page size must be between 1 and 30")
+    if after is not None and (not isinstance(after, str) or not after.strip()):
+        raise AblerApiError("Cursor must be a nonempty string or omitted")
+
+
+def _valid_connection(value: dict) -> bool:
+    edges, page = value.get("edges"), value.get("pageInfo")
+    if not isinstance(edges, list) or not isinstance(page, dict):
+        return False
+    if not all(
+        isinstance(edge, dict)
+        and isinstance(edge.get("node"), dict)
+        and isinstance(edge["node"].get("id"), (str, int))
+        for edge in edges
+    ):
+        return False
+    if not all(
+        isinstance(page.get(key), bool) for key in ("hasNextPage", "hasPreviousPage")
+    ):
+        return False
+    if not all(
+        page.get(key) is None or isinstance(page[key], str)
+        for key in ("startCursor", "endCursor")
+    ):
+        return False
+    return not page["hasNextPage"] or bool(page.get("endCursor"))
+
+
+def _connection_response(connection: dict) -> dict:
+    return {
+        "items": [edge["node"] for edge in connection["edges"]],
+        "page_info": {
+            key: connection["pageInfo"].get(key)
+            for key in ("hasNextPage", "hasPreviousPage", "startCursor", "endCursor")
+        },
+    }

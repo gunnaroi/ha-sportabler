@@ -8,9 +8,10 @@ import aiohttp
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.service import async_register_admin_service
 
 from .api import AblerApiClient, AblerApiError, AblerAuthError
 from .const import (
@@ -33,6 +34,100 @@ SET_ATTENDANCE_SCHEMA = vol.Schema(
         vol.Required(ATTR_STATUS): vol.In([STATUS_GOING, STATUS_NOT_GOING]),
     }
 )
+
+
+MESSAGE_SCHEMA = vol.Schema(
+    {
+        vol.Optional("entry_id"): cv.string,
+        vol.Optional("first", default=5): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=30)
+        ),
+        vol.Optional("after"): cv.string,
+    }
+)
+COMMENTS_SCHEMA = MESSAGE_SCHEMA.extend(
+    {vol.Required("post_id"): vol.All(vol.Coerce(int), vol.Range(min=1))}
+)
+CONVERSATION_SCHEMA = vol.Schema(
+    {
+        vol.Optional("entry_id"): cv.string,
+        vol.Required("conversation_id"): cv.string,
+        vol.Optional("first", default=30): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=30)
+        ),
+        vol.Optional("after"): cv.string,
+    }
+)
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Register explicit, admin-only reads; no message update timer is installed."""
+
+    def selected_client(call: ServiceCall):
+        entries = hass.data.get(DOMAIN, {})
+        entry_id = call.data.get("entry_id")
+        if entry_id:
+            selected = entries.get(entry_id)
+            if selected is None:
+                raise HomeAssistantError("Unknown Sportabler entry ID")
+        elif len(entries) == 1:
+            selected = next(iter(entries.values()))
+        else:
+            raise HomeAssistantError(
+                "Specify entry_id when multiple accounts are configured"
+            )
+        return selected
+
+    async def get_feed(call: ServiceCall) -> dict:
+        selected = selected_client(call)
+        try:
+            return await selected["client"].async_get_news_feed(
+                call.data["first"], call.data.get("after")
+            )
+        except AblerAuthError as err:
+            selected["coordinator"].entry.async_start_reauth(hass)
+            raise HomeAssistantError("Sportabler requires re-authentication") from err
+        except AblerApiError as err:
+            raise HomeAssistantError(f"Sportabler: {err}") from err
+
+    async def get_comments(call: ServiceCall) -> dict:
+        selected = selected_client(call)
+        try:
+            return await selected["client"].async_get_post_comments(
+                call.data["post_id"], call.data["first"], call.data.get("after")
+            )
+        except AblerAuthError as err:
+            selected["coordinator"].entry.async_start_reauth(hass)
+            raise HomeAssistantError("Sportabler requires re-authentication") from err
+        except AblerApiError as err:
+            raise HomeAssistantError(f"Sportabler: {err}") from err
+
+    async def get_conversation(call: ServiceCall) -> dict:
+        selected = selected_client(call)
+        try:
+            return await selected["client"].async_get_conversation_messages(
+                call.data["conversation_id"], call.data["first"], call.data.get("after")
+            )
+        except AblerAuthError as err:
+            selected["coordinator"].entry.async_start_reauth(hass)
+            raise HomeAssistantError("Sportabler requires re-authentication") from err
+        except AblerApiError as err:
+            raise HomeAssistantError(f"Sportabler: {err}") from err
+
+    for name, handler, schema in (
+        ("get_feed", get_feed, MESSAGE_SCHEMA),
+        ("get_post_comments", get_comments, COMMENTS_SCHEMA),
+        ("get_conversation_messages", get_conversation, CONVERSATION_SCHEMA),
+    ):
+        async_register_admin_service(
+            hass,
+            DOMAIN,
+            name,
+            handler,
+            schema,
+            supports_response=SupportsResponse.ONLY,
+        )
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

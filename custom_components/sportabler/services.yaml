@@ -25,3 +25,84 @@ set_attendance:
               value: "G"
             - label: Not going
               value: "N"
+
+get_feed:
+  name: Get feed
+  description: Read one page of feed posts on demand. Requires administrator access.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Sportabler config entry ID; optional for a single account.
+      selector:
+        text:
+    first:
+      name: Page size
+      description: Number of posts, from 1 to 30 (default 5).
+      selector:
+        number:
+          min: 1
+          max: 30
+          mode: box
+    after:
+      name: After cursor
+      description: Pass the previous response's page_info.endCursor for the next page.
+      selector:
+        text:
+get_post_comments:
+  name: Get post comments
+  description: Read one page of comments for a feed post on demand. Requires administrator access.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Sportabler config entry ID; optional for a single account.
+      selector:
+        text:
+    post_id:
+      name: Post ID
+      description: Numeric id from a get_feed response.
+      required: true
+      selector:
+        number:
+          min: 1
+          mode: box
+    first:
+      name: Page size
+      description: Number of comments, from 1 to 30 (default 5).
+      selector:
+        number:
+          min: 1
+          max: 30
+          mode: box
+    after:
+      name: After cursor
+      description: Pass the previous response's page_info.endCursor for the next page.
+      selector:
+        text:
+get_conversation_messages:
+  name: Get conversation messages
+  description: Read one page of a selected conversation on demand. Requires administrator access. Does not mark messages as read.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Sportabler config entry ID; optional for a single account.
+      selector:
+        text:
+    conversation_id:
+      name: Conversation ID
+      description: Exact id of the conversation to read.
+      required: true
+      selector:
+        text:
+    first:
+      name: Page size
+      description: Number of messages, from 1 to 30 (default 30).
+      selector:
+        number:
+          min: 1
+          max: 30
+          mode: box
+    after:
+      name: After cursor
+      description: Pass the previous response's page_info.endCursor for the next page.
+      selector:
+        text:
