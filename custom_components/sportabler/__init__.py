@@ -24,6 +24,7 @@ from .const import (
     STATUS_NOT_GOING,
 )
 from .coordinator import SportablerCoordinator
+from .message_archive import MessageArchive
 
 PLATFORMS = ["calendar", "sensor"]
 
@@ -135,7 +136,21 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         except AblerApiError as err:
             raise HomeAssistantError(f"Sportabler: {err}") from err
 
+    async def get_stored_conversation(call: ServiceCall) -> dict:
+        selected = selected_client(call)
+        try:
+            return selected["archive"].messages(
+                call.data["conversation_id"], call.data["first"], call.data.get("after")
+            )
+        except ValueError as err:
+            raise HomeAssistantError(str(err)) from err
+
     for name, handler, schema in (
+        (
+            "get_stored_conversation_messages",
+            get_stored_conversation,
+            CONVERSATION_SCHEMA,
+        ),
         ("get_feed", get_feed, MESSAGE_SCHEMA),
         ("get_post_comments", get_comments, COMMENTS_SCHEMA),
         ("get_conversations", get_conversations, CONVERSATION_LIST_SCHEMA),
@@ -163,9 +178,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
 
     client = AblerApiClient(session, entry.data[CONF_REFRESH_TOKEN], persist_token)
+    archive = MessageArchive(hass, entry.entry_id)
     coordinator = SportablerCoordinator(hass, entry, client)
 
     try:
+        await archive.async_load()
         await coordinator.async_config_entry_first_refresh()
     except BaseException:
         await session.close()
@@ -174,6 +191,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "coordinator": coordinator,
         "client": client,
+        "archive": archive,
         "session": session,
     }
 

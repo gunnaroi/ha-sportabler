@@ -153,8 +153,10 @@ async def test_actions_require_admin_and_select_one_account(monkeypatch):
             )
         }
     )
+    stored = Mock(return_value={"items": [{"id": "saved"}], "page_info": {}})
     entry1 = SimpleNamespace(
         client=one,
+        archive=SimpleNamespace(messages=stored),
         coordinator=SimpleNamespace(entry=SimpleNamespace(async_start_reauth=Mock())),
     )
     entry2 = SimpleNamespace(
@@ -168,7 +170,14 @@ async def test_actions_require_admin_and_select_one_account(monkeypatch):
         "get_post_comments",
         "get_conversations",
         "get_conversation_messages",
+        "get_stored_conversation_messages",
     }
+    saved, schema = registrations["get_stored_conversation_messages"]
+    assert (await saved(SimpleNamespace(data=schema({"conversation_id": "stored-1"}))))[
+        "items"
+    ] == [{"id": "saved"}]
+    stored.assert_called_once_with("stored-1", 30, None)
+    one.async_get_conversation_messages.assert_not_awaited()
     feed, schema = registrations["get_feed"]
     await feed(SimpleNamespace(data=schema({})))
     one.async_get_news_feed.assert_awaited_once_with(5, None)

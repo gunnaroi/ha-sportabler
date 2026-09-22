@@ -129,3 +129,32 @@ get_conversations:
       description: Pass the previous response's page_info.endCursor for the next page.
       selector:
         text:
+
+get_stored_conversation_messages:
+  name: Get stored conversation messages
+  description: Read messages already saved in Home Assistant. Requires administrator access and makes no Abler request.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Sportabler config entry ID; optional for a single account.
+      selector:
+        text:
+    conversation_id:
+      name: Conversation ID
+      description: Exact id of the stored conversation.
+      required: true
+      selector:
+        text:
+    first:
+      name: Page size
+      description: Number of stored messages, from 1 to 30 (default 30).
+      selector:
+        number:
+          min: 1
+          max: 30
+          mode: box
+    after:
+      name: After cursor
+      description: Pass the previous response's page_info.endCursor for the next stored page.
+      selector:
+        text:

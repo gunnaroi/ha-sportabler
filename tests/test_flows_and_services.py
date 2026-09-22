@@ -80,6 +80,11 @@ async def setup_service(monkeypatch):
     session = SimpleNamespace(close=AsyncMock())
     monkeypatch.setattr(sportabler.aiohttp, "ClientSession", Mock(return_value=session))
     monkeypatch.setattr(
+        sportabler,
+        "MessageArchive",
+        Mock(return_value=SimpleNamespace(async_load=AsyncMock())),
+    )
+    monkeypatch.setattr(
         sportabler, "async_track_time_interval", Mock(return_value=Mock())
     )
     coordinators = []
@@ -107,7 +112,7 @@ async def setup_service(monkeypatch):
 
 
 async def test_attendance_routes_to_matching_account(monkeypatch):
-    hass, coordinators, handler = await setup_service(monkeypatch)
+    _hass, coordinators, handler = await setup_service(monkeypatch)
     await handler(
         SimpleNamespace(
             data={"child_id": "second-child", "event_id": "event", "status": "G"}
@@ -121,7 +126,7 @@ async def test_attendance_routes_to_matching_account(monkeypatch):
 
 @pytest.mark.parametrize("ambiguous", [False, True])
 async def test_unmatched_or_ambiguous_account_never_sends(monkeypatch, ambiguous):
-    hass, coordinators, handler = await setup_service(monkeypatch)
+    _hass, coordinators, handler = await setup_service(monkeypatch)
     if ambiguous:
         coordinators[0].data["children"]["second-child"] = {}
     with pytest.raises(HomeAssistantError):
@@ -153,6 +158,11 @@ async def test_attendance_auth_failure_starts_reauth(monkeypatch):
 async def test_initial_refresh_failure_closes_session(monkeypatch):
     session = SimpleNamespace(close=AsyncMock())
     monkeypatch.setattr(sportabler.aiohttp, "ClientSession", Mock(return_value=session))
+    monkeypatch.setattr(
+        sportabler,
+        "MessageArchive",
+        Mock(return_value=SimpleNamespace(async_load=AsyncMock())),
+    )
     coordinator = SimpleNamespace(
         async_config_entry_first_refresh=AsyncMock(side_effect=RuntimeError("offline"))
     )
@@ -161,6 +171,32 @@ async def test_initial_refresh_failure_closes_session(monkeypatch):
     )
     with pytest.raises(RuntimeError):
         await sportabler.async_setup_entry(
-            SimpleNamespace(), SimpleNamespace(data={"refresh_token": "token"})
+            SimpleNamespace(),
+            SimpleNamespace(entry_id="test", data={"refresh_token": "token"}),
         )
     session.close.assert_awaited_once()
+
+
+async def test_archive_load_failure_closes_session(monkeypatch):
+    session = SimpleNamespace(close=AsyncMock())
+    monkeypatch.setattr(sportabler.aiohttp, "ClientSession", Mock(return_value=session))
+    monkeypatch.setattr(
+        sportabler,
+        "MessageArchive",
+        Mock(
+            return_value=SimpleNamespace(
+                async_load=AsyncMock(side_effect=RuntimeError("storage"))
+            )
+        ),
+    )
+    coordinator = SimpleNamespace(async_config_entry_first_refresh=AsyncMock())
+    monkeypatch.setattr(
+        sportabler, "SportablerCoordinator", Mock(return_value=coordinator)
+    )
+    with pytest.raises(RuntimeError):
+        await sportabler.async_setup_entry(
+            SimpleNamespace(),
+            SimpleNamespace(entry_id="test", data={"refresh_token": "token"}),
+        )
+    session.close.assert_awaited_once()
+    coordinator.async_config_entry_first_refresh.assert_not_awaited()

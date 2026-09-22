@@ -9,17 +9,14 @@ from the app's own network traffic — there is no public API.
   - A `calendar.<child>` entity listing their upcoming events (practices, matches, etc.)
   - A `sensor.<child>_next_activity` entity with the next event's time, location, team, and
     your current attendance response (`going` / `not_going` / `not_responded`) as attributes
-- Two account-level snapshot sensors: **Latest feed post** (body and author as
-  attributes) and **Conversations** (one page of conversation IDs, names, and
-  unread counts, and the latest message in each). The Conversations sensor refreshes
-  once per hour from 07:00
-  through 22:00 in Home Assistant's local timezone (16 requests per day with
-  continuous uptime). The feed sensor remains manual-only. Conversation histories
-  are fetched only on demand. The latest message is included in the hourly inbox
-  response, so showing it makes no additional request. After the first successful
-  refresh, a changed latest-message ID marks that conversation as having a new
-  message. A fresh start establishes a baseline rather than claiming old messages
-  are new.
+- Two account-level sensors: **Latest feed post** (manual refresh) and
+  **Conversations**. The Conversations sensor checks the full inbox hourly from
+  07:00 through 22:00 in Home Assistant's local timezone. Its attributes show
+  each conversation's latest message and the total number of messages stored.
+  When the latest message ID changes, the integration fetches that conversation's
+  new messages and saves them by ID in Home Assistant's private local storage.
+  Unchanged conversations do not trigger history requests. The first check saves
+  the latest message as a baseline; it does not automatically import old history.
 - A `sportabler.set_attendance` service to RSVP a child to an event from an automation
   or dashboard button (fields: `child_id`, `event_id`, `status: G|N` — ids are visible in
   the sensor's `event_id` attribute and the device's identifiers)
@@ -57,8 +54,10 @@ entity. Saving options reloads the integration and fetches once.
 
 Profiles are cached for 24 hours in memory. With continuous uptime, hourly mode
 makes roughly 25 requests per day per account, compared with 192 previously.
-The daytime Conversations sensor adds up to 16 inbox requests per day,
-for roughly 41 scheduled requests per day per account with hourly calendar mode.
+The daytime Conversations sensor adds 16 inbox checks per day, plus any
+pagination needed to list the inbox. A changed conversation triggers a history
+request; at most ten history pages are requested per check. Unfinished pages
+continue on the next check. The archive survives Home Assistant restarts.
 Startup, reloads, manual updates, and attendance submissions add requests.
 Less frequent updates mean schedule changes reach Home Assistant later.
 
@@ -77,55 +76,44 @@ Less frequent updates mean schedule changes reach Home Assistant later.
 - Profile caches and cooldowns are in memory and reset on restart/reload. Restarting
   repeatedly causes new requests; it is not a way to resolve a rate limit.
 
-## Feed and conversation reads
+## Messages and stored history
 
-Home Assistant Actions provides four **administrator-only, read-only** actions:
+The **Conversations** sensor refreshes automatically at the top of each hour from
+07:00 through 22:00, Home Assistant local time. To check immediately, run
+`homeassistant.update_entity` targeting that sensor. Its `conversations` attribute
+shows names, unread counts, latest-message text, and `stored_message_count`. The
+`new_message_conversation_ids` attribute lists conversations with messages saved
+since the preceding check. A fresh installation takes its first check as the
+baseline. The feed sensor remains manual-only.
 
-- `sportabler.get_feed` returns one page of feed posts (default 5).
-- `sportabler.get_post_comments` takes a numeric `post_id` from a feed result and
-  returns one page of comments (default 5).
-- `sportabler.get_conversations` discovers one page of conversation IDs and
-  labels (default 20), without fetching message bodies.
-- `sportabler.get_conversation_messages` takes an exact `conversation_id` from
-  a `get_conversations` result and
-  returns one page of messages (default 30).
+New messages are saved in Home Assistant's private `.storage` directory, keyed by
+config entry and message ID. Saving them does not mark them read in Abler. The
+archive contains all messages fetched since the baseline, including multiple
+messages that arrived between hourly checks, subject to the ten-page-per-check
+limit. It does not automatically import older history.
 
-To refresh either sensor immediately, run `homeassistant.update_entity` for that
-sensor under **Developer Tools → Actions**. The Conversations sensor remains
-unknown until its first scheduled or manual refresh; the feed sensor remains
-unknown until manually refreshed. Open the Conversations entity's attributes to
-see each conversation's `latest_message` with body, sender, and timestamp.
-The `new_message` field and `new_message_conversation_ids` attribute identify
-conversations whose latest message ID changed since the previous successful refresh.
-Refreshing one sensor makes one Abler request
-and does not update the other. The feed body and conversation names are then
-stored as Home Assistant state attributes and may be retained by Recorder; use the response actions below
-if you do not want that persistence.
+To read the saved messages under **Developer Tools → Actions**, call:
 
-These actions return `items` and `page_info`. If `page_info.hasNextPage` is true,
-pass `page_info.endCursor` as `after` on the next call. Each action fetches **one
-page only**, up to 30 items. Calling an action makes one request; these features
-add no automatic pagination or conversation-history polling. Only the
-Conversations sensor has a scheduled inbox refresh. It shows the latest message
-from each conversation in the first page, not the full message history. If
-several messages arrive between checks, the inbox snapshot shows only the newest;
-use `sportabler.get_conversation_messages` to retrieve the conversation history.
-The change flag can also include a message sent by you. The
-integration does not call Abler's `MarkAsRead` mutation. The conversation-history action returns message bodies only in its response;
-there is no conversation-history entity. Automations that save or forward action
-responses may retain them elsewhere.
+```yaml
+action: sportabler.get_stored_conversation_messages
+data:
+  conversation_id: "PASTE_ID_FROM_CONVERSATIONS_SENSOR"
+```
 
-For multiple Sportabler accounts, include `entry_id` to select one; with one
-account it is optional. The actions use the same rotating session token,
-serialized request handling, and cooldown as the calendar. The requests are
-based on observed Abler web-client traffic and have not been validated against
-an installed Home Assistant instance or a live Abler session.
+This administrator-only action returns up to 30 stored messages under `items`
+and makes no Abler request. If `page_info.hasNextPage` is true, pass
+`page_info.endCursor` as `after` to get the next saved page. The action
+`sportabler.get_conversation_messages` still reads a conversation directly from
+Abler on demand; it does not change the archive. Other administrator-only
+read-only actions are `sportabler.get_conversations`, `sportabler.get_feed`, and
+`sportabler.get_post_comments`. Direct Abler actions return one page per call,
+up to 30 items, and do not invoke `MarkAsRead`.
 
-Conversation discovery uses the observed `message` inbox-list query. It runs
-for the scheduled Conversations sensor refresh or when `get_conversations` is
-called. Each retrieval gets a single page and does not fetch every conversation's
-history. `getMessageUnreadCount` only returns a number; `MarkAsRead` changes read state. Neither is used for discovery. Do not
-paste authentication headers or cookies when sharing captures.
+Message text in the Conversations sensor is a Home Assistant state attribute and
+may also be retained by Recorder. The archive file is private local storage,
+not encrypted; protect your Home Assistant backups and administrator accounts.
+This uses Abler's undocumented GraphQL API and has not yet been tested against
+a live Home Assistant installation and Abler session.
 
 ## Notes / limitations
 
