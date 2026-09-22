@@ -1,6 +1,7 @@
 """Message sensors fetch only on manual refresh or the daytime inbox timer."""
 
 import asyncio
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -159,6 +160,10 @@ async def test_conversation_schedule_is_local_daytime_only():
             return_value=cancel,
         ) as track,
         patch.object(inbox, "async_schedule_update_ha_state") as schedule,
+        patch(
+            "custom_components.sportabler.sensor.dt_util.now",
+            return_value=datetime(2026, 9, 22, 8, 30, tzinfo=timezone.utc),
+        ),
     ):
         await inbox.async_added_to_hass()
         track.assert_called_once()
@@ -167,8 +172,9 @@ async def test_conversation_schedule_is_local_daytime_only():
             "minute": 0,
             "second": 0,
         }
-        track.call_args.args[1](None)
         schedule.assert_called_once_with(True)
+        track.call_args.args[1](None)
+        assert schedule.call_count == 2
 
 
 async def test_new_latest_message_is_detected_after_initial_snapshot():
@@ -259,3 +265,26 @@ async def test_each_saved_message_emits_event_and_unread_sensor_updates():
         call.args[1]["message_id"] for call in _hass.bus.async_fire.call_args_list
     ] == ["m3", "m2"]
     assert unread.async_write_ha_state.call_count == 2
+
+
+async def test_inbox_does_not_refresh_on_nighttime_startup():
+    hass, entry, client = fixtures()
+    inbox = SportablerConversationsSensor(
+        entry, client, hass.data["sportabler"][entry.entry_id]["archive"]
+    )
+    inbox.hass = hass
+    with (
+        patch.object(SensorEntity, "async_added_to_hass", new_callable=AsyncMock),
+        patch(
+            "custom_components.sportabler.sensor.async_track_time_change",
+            return_value=Mock(),
+        ),
+        patch.object(inbox, "async_schedule_update_ha_state") as schedule,
+        patch(
+            "custom_components.sportabler.sensor.dt_util.now",
+            return_value=datetime(2026, 9, 22, 23, 30, tzinfo=timezone.utc),
+        ),
+    ):
+        await inbox.async_added_to_hass()
+        schedule.assert_not_called()
+    client.async_get_conversations.assert_not_awaited()

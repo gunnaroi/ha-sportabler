@@ -80,8 +80,9 @@ Less frequent updates mean schedule changes reach Home Assistant later.
 
 ## Messages and stored history
 
-The **Conversations** sensor refreshes automatically at the top of each hour from
-07:00 through 22:00, Home Assistant local time. To check immediately, run
+The **Conversations** sensor refreshes on startup during daytime and then at the
+top of each hour from 07:00 through 22:00, Home Assistant local time. Overnight
+starts wait until 07:00. To check immediately, run
 `homeassistant.update_entity` targeting that sensor. Its `conversations` attribute
 shows names, unread counts, latest-message text, and `stored_message_count`. The
 `new_message_conversation_ids` attribute lists conversations with messages saved

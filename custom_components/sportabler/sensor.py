@@ -190,6 +190,8 @@ class SportablerConversationsSensor(_SportablerManualSensor):
                 self.hass, refresh_inbox, hour=range(7, 23), minute=0, second=0
             )
         )
+        if 7 <= dt_util.now().hour < 23:
+            self.async_schedule_update_ha_state(True)
 
     async def async_update(self) -> None:
         inbox_items = []
