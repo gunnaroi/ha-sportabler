@@ -389,86 +389,84 @@ class AblerApiClient:
         child_ids: Sequence[str] | None = None,
         first: int = 100,
     ) -> list[dict[str, Any]]:
-        """Fetch every page per child, then merge shared events by Abler ID."""
+        """Fetch every page once; the coordinator assigns family players to children.
+
+        Abler's scheduleV2Filter accepts the date range but not participantIds.
+        Filtering by child here makes the entire request fail with HTTP 400.
+        """
         if type(first) is not int or not 1 <= first <= 100:
             raise AblerApiError("Schedule page size must be between 1 and 100")
         if child_ids is not None and not child_ids:
             return []
 
-        participants: Sequence[str | None] = child_ids or [None]
+        if child_ids is not None and any(
+            not isinstance(child_id, str) or not child_id for child_id in child_ids
+        ):
+            raise AblerApiError("Child IDs must be nonempty strings")
         events: dict[str, dict[str, Any]] = {}
-        for child_id in participants:
-            if child_id is not None and (not isinstance(child_id, str) or not child_id):
-                raise AblerApiError("Child IDs must be nonempty strings")
-            after: str | None = None
-            seen_cursors: set[str] = set()
-            for _ in range(100):
-                event_filter: dict[str, Any] = {
-                    "timeAfter": time_after,
-                    "timeBefore": time_before,
-                }
-                if child_id is not None:
-                    event_filter["participantIds"] = [child_id]
-                data = await self._post(
-                    "scheduleV2",
-                    QUERY_SCHEDULE,
-                    {
-                        "filter": event_filter,
-                        "first": first,
-                        "after": after,
-                    },
-                )
-                connection = data["scheduleV2"]
-                page = connection["page"]
-                page_info = connection.get("pageInfo")
-                if not isinstance(page_info, dict) or not isinstance(
-                    page_info.get("hasNextPage"), bool
-                ):
-                    self._backoff()
-                    raise AblerApiError("Schedule response omitted pagination data")
-                for event in page:
-                    if not isinstance(event, dict):
-                        self._backoff()
-                        raise AblerApiError("Schedule contained a malformed event")
-                    event_id = event.get("id") or event.get("_id")
-                    if not isinstance(event_id, (str, int)):
-                        self._backoff()
-                        raise AblerApiError("Schedule event omitted its ID")
-                    key = str(event_id)
-                    if key not in events:
-                        events[key] = event
-                        continue
-                    existing_players = events[key].get("familyPlayers")
-                    if not isinstance(existing_players, list):
-                        existing_players = []
-                        events[key]["familyPlayers"] = existing_players
-                    known_players = set()
-                    for participant in existing_players:
-                        if not isinstance(participant, dict):
-                            continue
-                        player = participant.get("player")
-                        player_id = player.get("id") if isinstance(player, dict) else None
-                        known_players.add(player_id or participant.get("id"))
-                    for participant in event.get("familyPlayers") or []:
-                        if not isinstance(participant, dict):
-                            continue
-                        player = participant.get("player")
-                        player_id = player.get("id") if isinstance(player, dict) else None
-                        participant_key = player_id or participant.get("id")
-                        if participant_key not in known_players:
-                            existing_players.append(participant)
-                            known_players.add(participant_key)
-                if not page_info["hasNextPage"]:
-                    break
-                cursor = page_info.get("endCursor")
-                if not isinstance(cursor, str) or not cursor or cursor in seen_cursors:
-                    self._backoff()
-                    raise AblerApiError("Schedule pagination cursor did not advance")
-                seen_cursors.add(cursor)
-                after = cursor
-            else:
+        after: str | None = None
+        seen_cursors: set[str] = set()
+        for _ in range(100):
+            data = await self._post(
+                "scheduleV2",
+                QUERY_SCHEDULE,
+                {
+                    "filter": {"timeAfter": time_after, "timeBefore": time_before},
+                    "first": first,
+                    "after": after,
+                },
+            )
+            connection = data["scheduleV2"]
+            page = connection["page"]
+            page_info = connection.get("pageInfo")
+            if not isinstance(page_info, dict) or not isinstance(
+                page_info.get("hasNextPage"), bool
+            ):
                 self._backoff()
-                raise AblerApiError("Schedule exceeded the 100-page safety limit")
+                raise AblerApiError("Schedule response omitted pagination data")
+            for event in page:
+                if not isinstance(event, dict):
+                    self._backoff()
+                    raise AblerApiError("Schedule contained a malformed event")
+                event_id = event.get("id") or event.get("_id")
+                if not isinstance(event_id, (str, int)):
+                    self._backoff()
+                    raise AblerApiError("Schedule event omitted its ID")
+                key = str(event_id)
+                if key not in events:
+                    events[key] = event
+                    continue
+                existing_players = events[key].get("familyPlayers")
+                if not isinstance(existing_players, list):
+                    existing_players = []
+                    events[key]["familyPlayers"] = existing_players
+                known_players = set()
+                for participant in existing_players:
+                    if not isinstance(participant, dict):
+                        continue
+                    player = participant.get("player")
+                    player_id = player.get("id") if isinstance(player, dict) else None
+                    known_players.add(player_id or participant.get("id"))
+                for participant in event.get("familyPlayers") or []:
+                    if not isinstance(participant, dict):
+                        continue
+                    player = participant.get("player")
+                    player_id = player.get("id") if isinstance(player, dict) else None
+                    participant_key = player_id or participant.get("id")
+                    if participant_key not in known_players:
+                        existing_players.append(participant)
+                        known_players.add(participant_key)
+            if not page_info["hasNextPage"]:
+                break
+            cursor = page_info.get("endCursor")
+            if not isinstance(cursor, str) or not cursor or cursor in seen_cursors:
+                self._backoff()
+                raise AblerApiError("Schedule pagination cursor did not advance")
+            seen_cursors.add(cursor)
+            after = cursor
+        else:
+            self._backoff()
+            raise AblerApiError("Schedule exceeded the 100-page safety limit")
 
         return list(events.values())
 

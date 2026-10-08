@@ -136,6 +136,25 @@ async def test_graphql_validation_diagnostic_exposes_only_field_name():
     assert "Private Person" not in str(caught.value)
 
 
+async def test_schedule_pages_without_unsupported_child_filter():
+    first_page = {"data": {"scheduleV2": {
+        "page": [{"id": "event-a"}],
+        "pageInfo": {"hasNextPage": True, "endCursor": "next"},
+    }}}
+    second_page = {"data": {"scheduleV2": {
+        "page": [{"id": "event-b"}],
+        "pageInfo": {"hasNextPage": False, "endCursor": None},
+    }}}
+    client, session = client_with(Response(first_page), Response(second_page))
+    events = await client.async_get_schedule("after", "before", ["child-a", "child-b"])
+    assert [event["id"] for event in events] == ["event-a", "event-b"]
+    assert session.post.call_count == 2
+    for call in session.post.call_args_list:
+        assert call.kwargs["json"]["variables"]["filter"] == {
+            "timeAfter": "after", "timeBefore": "before",
+        }
+
+
 async def test_rotated_token_persisted_even_on_error():
     callback = Mock()
     client, session = client_with(

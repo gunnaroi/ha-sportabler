@@ -54,9 +54,9 @@ or 12 hours, daily, or **Manual only**. Manual mode fetches once at startup/relo
 subsequent updates require `homeassistant.update_entity` targeting one Sportabler
 entity. Saving options reloads the integration and fetches once.
 
-Profiles are cached for 24 hours in memory. Schedule requests are made once per
-linked child and once for each additional page that child has in the date range;
-shared events are merged locally. A token renewal request is made when the
+Profiles are cached for 24 hours in memory. Schedule requests cover all linked
+children together, with one request per page in the date range. Events are
+assigned to children from their participant data. A token renewal request is made when the
 short-lived access cookie is close to expiring. The daytime Conversations sensor
 adds 16 inbox checks per day, plus any pagination needed to list the inbox. A
 changed conversation triggers a history request; at most ten history pages are
@@ -89,9 +89,9 @@ so opening the card does not contact Abler or mark messages as read there.
 
 After updating the integration and restarting Home Assistant, add a dashboard
 resource at **Settings → Dashboards → Resources** with URL
-`/sportabler/chat-card.js?v=0.5.0` and type **JavaScript module**. Version 0.5.0
-adds per-child schedule pagination and refreshes the short-lived Abler access
-cookie through the token endpoint. Then add a
+`/sportabler/chat-card.js?v=0.5.0` and type **JavaScript module**. Version 0.5.3
+pages through the shared schedule without an unsupported child filter and refreshes
+the short-lived Abler access cookie through the token endpoint. Then add a
 **Manual** card to a dashboard:
 
 ```yaml
