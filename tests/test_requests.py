@@ -38,7 +38,7 @@ class Response:
         if self.status >= 400:
             raise aiohttp.ClientResponseError(Mock(), (), status=self.status)
 
-    async def json(self):
+    async def json(self, **_kwargs):
         return self.body
 
 
@@ -124,6 +124,16 @@ async def test_request_failure_reports_safe_diagnostic(response, reason):
     with pytest.raises(AblerApiError, match=f"me failed \\({reason}\\)") as caught:
         await client.async_get_me()
     assert "private response body" not in str(caught.value)
+
+
+async def test_graphql_validation_diagnostic_exposes_only_field_name():
+    client, _ = client_with(Response(
+        {"errors": [{"message": 'Cannot query field "legacyField" on type "Event" for user Private Person'}]},
+        status=400,
+    ))
+    with pytest.raises(AblerApiError, match="unknown field legacyField") as caught:
+        await client.async_get_schedule("2026-10-08", "2026-11-08", ["child"])
+    assert "Private Person" not in str(caught.value)
 
 
 async def test_rotated_token_persisted_even_on_error():

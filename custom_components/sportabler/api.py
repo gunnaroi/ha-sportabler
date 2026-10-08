@@ -11,6 +11,7 @@ import base64
 import binascii
 import json
 import logging
+import re
 import time
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
@@ -35,6 +36,27 @@ MESSAGE_OPERATIONS = {
 }
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _safe_graphql_validation_error(body: Any) -> str | None:
+    """Summarize schema errors without retaining server messages or user data."""
+    if not isinstance(body, dict) or not isinstance(body.get("errors"), list):
+        return None
+    for error in body["errors"]:
+        if not isinstance(error, dict) or not isinstance(error.get("message"), str):
+            continue
+        message = error["message"]
+        for pattern, label in (
+            (r"Cannot query field ['\"]([A-Za-z_][A-Za-z0-9_]*)", "unknown field"),
+            (r"Unknown argument ['\"]([A-Za-z_][A-Za-z0-9_]*)", "unknown argument"),
+            (r"Unknown type ['\"]([A-Za-z_][A-Za-z0-9_]*)", "unknown type"),
+            (r"Variable ['\"]\$([A-Za-z_][A-Za-z0-9_]*)", "invalid variable"),
+            (r"Argument ['\"]([A-Za-z_][A-Za-z0-9_]*)['\"] has invalid value", "invalid argument"),
+        ):
+            match = re.search(pattern, message)
+            if match:
+                return f"{label} {match.group(1)}"
+    return None
 
 QUERY_ME = """
 query me {
@@ -242,6 +264,17 @@ class AblerApiClient:
                 )
             if 300 <= resp.status < 400:
                 raise AblerAuthError("Sportabler redirected the request; sign in again")
+            if resp.status == 400:
+                try:
+                    error_body = await resp.json(content_type=None)
+                except (aiohttp.ClientError, ValueError):
+                    error_body = None
+                detail = _safe_graphql_validation_error(error_body)
+                if detail:
+                    self._backoff()
+                    raise AblerApiError(
+                        f"Sportabler {operation_name} rejected ({detail}); requests temporarily paused"
+                    )
             resp.raise_for_status()
             body = await resp.json()
 
