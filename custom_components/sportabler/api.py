@@ -192,8 +192,18 @@ class AblerApiClient:
                 raise
             except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
                 self._backoff()
+                # Expose only the operation and error category. Never include
+                # response bodies, cookie values, URLs, or raw exceptions in HA.
+                if isinstance(err, aiohttp.ClientResponseError):
+                    reason = f"HTTP {err.status}"
+                elif isinstance(err, asyncio.TimeoutError):
+                    reason = "timeout"
+                elif isinstance(err, ValueError):
+                    reason = "invalid response"
+                else:
+                    reason = type(err).__name__
                 raise AblerApiError(
-                    "Sportabler request failed; requests temporarily paused"
+                    f"Sportabler {operation_name} failed ({reason}); requests temporarily paused"
                 ) from err
 
     async def _post_locked(

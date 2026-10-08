@@ -111,6 +111,21 @@ async def test_timeout_does_not_retry_mutation():
     assert session.post.call_count == 1
 
 
+@pytest.mark.parametrize(
+    ("response", "reason"),
+    [
+        (Response(status=400), "HTTP 400"),
+        (asyncio.TimeoutError(), "timeout"),
+        (ValueError("private response body"), "invalid response"),
+    ],
+)
+async def test_request_failure_reports_safe_diagnostic(response, reason):
+    client, _ = client_with(response)
+    with pytest.raises(AblerApiError, match=f"me failed \\({reason}\\)") as caught:
+        await client.async_get_me()
+    assert "private response body" not in str(caught.value)
+
+
 async def test_rotated_token_persisted_even_on_error():
     callback = Mock()
     client, session = client_with(
