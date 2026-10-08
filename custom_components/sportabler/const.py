@@ -3,6 +3,7 @@ DOMAIN = "sportabler"
 BASE_URL = "https://www.abler.io"
 GRAPHQL_URL = f"{BASE_URL}/graphql"
 POSTS_GRAPHQL_URL = f"{BASE_URL}/posts/graphql"
+OAUTH_TOKEN_URL = f"{BASE_URL}/oauth/token"
 
 CONF_REFRESH_TOKEN = "refresh_token"
 

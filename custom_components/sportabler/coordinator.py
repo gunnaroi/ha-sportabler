@@ -55,10 +55,13 @@ class SportablerCoordinator(DataUpdateCoordinator):
                 self._me = await self.client.async_get_me()
                 self._profile_updated = time.monotonic()
             me = self._me
+            children = {child["id"]: child for child in me.get("children", [])}
             now = dt_util.utcnow()
             time_after = (now - timedelta(days=SCHEDULE_LOOKBACK_DAYS)).isoformat()
             time_before = (now + timedelta(days=SCHEDULE_LOOKAHEAD_DAYS)).isoformat()
-            raw_events = await self.client.async_get_schedule(time_after, time_before)
+            raw_events = await self.client.async_get_schedule(
+                time_after, time_before, child_ids=list(children)
+            )
         except AblerAuthError as err:
             raise ConfigEntryAuthFailed(
                 "Sportabler session expired - re-authenticate the integration"
@@ -68,7 +71,6 @@ class SportablerCoordinator(DataUpdateCoordinator):
         finally:
             self._maybe_persist_refresh_token()
 
-        children = {child["id"]: child for child in me.get("children", [])}
         events_by_child: dict[str, list[dict]] = {child_id: [] for child_id in children}
 
         for event in raw_events:

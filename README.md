@@ -54,13 +54,15 @@ or 12 hours, daily, or **Manual only**. Manual mode fetches once at startup/relo
 subsequent updates require `homeassistant.update_entity` targeting one Sportabler
 entity. Saving options reloads the integration and fetches once.
 
-Profiles are cached for 24 hours in memory. With continuous uptime, hourly mode
-makes roughly 25 requests per day per account, compared with 192 previously.
-The daytime Conversations sensor adds 16 inbox checks per day, plus any
-pagination needed to list the inbox. A changed conversation triggers a history
-request; at most ten history pages are requested per check. Unfinished pages
-continue on the next check. The archive survives Home Assistant restarts.
-Startup, reloads, manual updates, and attendance submissions add requests.
+Profiles are cached for 24 hours in memory. Schedule requests are made once per
+linked child and once for each additional page that child has in the date range;
+shared events are merged locally. A token renewal request is made when the
+short-lived access cookie is close to expiring. The daytime Conversations sensor
+adds 16 inbox checks per day, plus any pagination needed to list the inbox. A
+changed conversation triggers a history request; at most ten history pages are
+requested per check. Unfinished pages continue on the next check. The archive
+survives Home Assistant restarts. Startup, reloads, manual updates, and attendance
+submissions add requests.
 Less frequent updates mean schedule changes reach Home Assistant later.
 
 - Calendar views use cached events. A local one-minute timer advances time-based
@@ -80,14 +82,16 @@ Less frequent updates mean schedule changes reach Home Assistant later.
 
 ## Chat view in Home Assistant
 
-Version 0.4.0 includes a read-only dashboard card styled like an Abler conversation:
+Version 0.4.0 introduced a read-only dashboard card styled like an Abler conversation:
 a conversation list, sender initials, date labels, timestamps, and message bubbles.
 It reads Home Assistant's local message archive when you open a conversation,
 so opening the card does not contact Abler or mark messages as read there.
 
 After updating the integration and restarting Home Assistant, add a dashboard
 resource at **Settings → Dashboards → Resources** with URL
-`/sportabler/chat-card.js?v=0.4.0` and type **JavaScript module**. Then add a
+`/sportabler/chat-card.js?v=0.5.0` and type **JavaScript module**. Version 0.5.0
+adds per-child schedule pagination and refreshes the short-lived Abler access
+cookie through the token endpoint. Then add a
 **Manual** card to a dashboard:
 
 ```yaml
@@ -152,6 +156,9 @@ a live Home Assistant installation and Abler session.
 - This talks to Sportabler's internal GraphQL API (`www.abler.io/graphql`), which is
   undocumented and can change without notice.
 - The schedule query looks back 1 day and ahead 30 days on each poll (hourly by default).
+  It paginates separately for each linked child so busy siblings cannot crowd one
+  another out of a shared result limit. Auth renewal uses Abler's observed but
+  undocumented `/oauth/token` endpoint when the current access cookie is near expiry.
 - Match-specific fields (opponent, score) aren't pulled in; only the fields common to
   all event types (time, location, team, attendance).
 
